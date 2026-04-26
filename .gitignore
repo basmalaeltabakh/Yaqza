@@ -1,0 +1,30 @@
+# System / IDE leftovers
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Node / JavaScript dependencies and builds
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+.next/
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+env/
+venv/
+ENV/
+.venv/
+
+# IDEs / Editors
+.idea/
+.vscode/
+
+# Data directory (datasets) is large and should be ignored by Git
+data/
