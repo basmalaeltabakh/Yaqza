@@ -1,10 +1,5 @@
-# ============================================================
-# Yaqza | يقظة — Python Dependencies
-# Install: pip install -r requirements.txt
-# Python version: 3.9+
-# ============================================================
 
-# ── Core Data Science (Everyone) ────────────────────────────
+# Core Data Science 
 pandas>=1.5.0
 numpy>=1.23.0
 matplotlib>=3.6.0
@@ -14,7 +9,7 @@ scipy>=1.10.0
 jupyter>=1.0.0
 jupyterlab>=3.6.0
 
-# ── ML / Deep Learning (M2) ─────────────────────────────────
+#  ML / Deep Learning 
 torch>=2.0.0
 torchvision>=0.15.0
 pytorch-lightning>=2.0.0
@@ -22,26 +17,26 @@ pytorch-forecasting>=1.0.0
 xgboost>=1.7.0
 tqdm>=4.65.0
 
-# ── ONNX / Edge Inference (M3) ──────────────────────────────
+#  ONNX / Edge Inference 
 onnx>=1.14.0
 onnxruntime>=1.15.0
 
-# ── API & Serving (M3) ──────────────────────────────────────
+#  API & Serving 
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0
 pydantic>=2.0.0
 httpx>=0.24.0
 
-# ── Azure SDK (M1, M3, M4) ──────────────────────────────────
+#  Azure SDK 
 azure-iot-device>=2.12.0
 azure-ai-ml>=1.8.0
 
-# ── IoT / Messaging (M1) ────────────────────────────────────
+# IoT / Messaging 
 paho-mqtt>=1.6.1
 
-# ── MLOps & Experiment Tracking (M4) ────────────────────────
+#  MLOps & Experiment Tracking 
 mlflow>=2.5.0
 
-# ── Testing (Everyone) ──────────────────────────────────────
+# Testing 
 pytest>=7.4.0
 pytest-cov>=4.1.0
