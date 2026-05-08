@@ -11,6 +11,8 @@ Logs:
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -116,7 +118,8 @@ class MLflowTracker:
             fig: Matplotlib figure.
             name: Name for the artifact (e.g., "learning_curves.png").
         """
-        temp_path = Path("/tmp") / name
+        tmp_dir = tempfile.gettempdir()
+        temp_path = Path(tmp_dir) / name
         fig.savefig(temp_path, dpi=100, bbox_inches="tight")
         mlflow.log_artifact(str(temp_path), artifact_path="plots")
         temp_path.unlink()
@@ -128,7 +131,8 @@ class MLflowTracker:
             d: Dictionary to log.
             name: Artifact name (e.g., "metrics.json").
         """
-        temp_path = Path("/tmp") / name
+        tmp_dir = tempfile.gettempdir()
+        temp_path = Path(tmp_dir) / name
         with open(temp_path, "w") as f:
             json.dump(d, f, indent=2)
         mlflow.log_artifact(str(temp_path), artifact_path="artifacts")

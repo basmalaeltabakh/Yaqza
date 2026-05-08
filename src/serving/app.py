@@ -217,8 +217,4 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-    # Run the app with uvicorn for local development
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
