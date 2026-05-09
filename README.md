@@ -118,32 +118,8 @@ main          ← Production only. Never push directly.
         └── feature/m5-dashboard
 ```
 
-**PR Rule:** Every feature branch requires **at least 1 reviewer approval** before merging into `develop`.  
-**M1 merges** `develop → main` at the end of each phase.
-
-### Creating your branch (first time)
-```bash
-git checkout develop
-git pull origin develop
-git checkout -b feature/m2-models   # replace with your branch name
-```
-
-### Daily workflow
-```bash
-git add .
-git commit -m "feat(m2): add sliding window preprocessing"
-git push origin feature/m2-models
-# Then open a Pull Request on GitHub targeting develop
-```
-
 ---
 
-## Running Tests
-```bash
-pytest tests/ -v --cov=src
-```
-
----
 
 ## Phase 1 Focus — What to do right now
 
