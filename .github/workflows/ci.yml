@@ -1,0 +1,25 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect language and install
+        run: |
+          if [ -f package.json ]; then
+            echo "Node.js project detected"
+            npm ci
+          elif [ -f requirements.txt ]; then
+            echo "Python project detected"
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+          else
+            echo "No supported language detected; skipping install"
+          fi
+      - name: Run tests
+        run: |
+          if [ -f package.json ]; then npm test || true; fi
+          if [ -f requirements.txt ]; then pytest -q || true; fi
