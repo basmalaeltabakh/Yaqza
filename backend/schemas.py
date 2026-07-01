@@ -1,70 +1,187 @@
-from pydantic import BaseModel, Field, validator
-from typing import Optional
+# backend/schemas.py
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 
-# ── Input schema: Sensor data received from the equipment ─────────────
 class SensorReadingCreate(BaseModel):
-    equipment_id: str = Field(..., example="ENG001")
-    sensor_name: str = Field(..., example="sensor_2")
-    value: float = Field(..., example=0.567)
-    cycle: int = Field(..., gt=0, example=145)
+    engine_id: str
+    cycle: int
+    op_setting_1: Optional[float] = 0.0
+    op_setting_2: Optional[float] = 0.0
+    op_setting_3: Optional[float] = 0.0
+    sensor_1: Optional[float] = 0.0
+    sensor_2: Optional[float] = 0.0
+    sensor_3: Optional[float] = 0.0
+    sensor_4: Optional[float] = 0.0
+    sensor_5: Optional[float] = 0.0
+    sensor_6: Optional[float] = 0.0
+    sensor_7: Optional[float] = 0.0
+    sensor_8: Optional[float] = 0.0
+    sensor_9: Optional[float] = 0.0
+    sensor_10: Optional[float] = 0.0
+    sensor_11: Optional[float] = 0.0
+    sensor_12: Optional[float] = 0.0
+    sensor_13: Optional[float] = 0.0
+    sensor_14: Optional[float] = 0.0
+    sensor_15: Optional[float] = 0.0
+    sensor_16: Optional[float] = 0.0
+    sensor_17: Optional[float] = 0.0
+    sensor_18: Optional[float] = 0.0
+    sensor_19: Optional[float] = 0.0
+    sensor_20: Optional[float] = 0.0
+    sensor_21: Optional[float] = 0.0
 
-    @validator("equipment_id")
-    def equipment_id_not_empty(cls, v):
-        if not v.strip():
-            raise ValueError("equipment_id cannot be empty")
-        return v.upper()
 
-
-# ── Response schema: Stored sensor reading ────────────────────────────
 class SensorReadingResponse(BaseModel):
     id: int
-    equipment_id: str
-    sensor_name: str
-    value: float
+    engine_id: str
     cycle: int
-    timestamp: datetime
+    op_setting_1: Optional[float]
+    op_setting_2: Optional[float]
+    op_setting_3: Optional[float]
+    sensor_1: Optional[float]
+    sensor_2: Optional[float]
+    sensor_3: Optional[float]
+    sensor_4: Optional[float]
+    sensor_5: Optional[float]
+    sensor_6: Optional[float]
+    sensor_7: Optional[float]
+    sensor_8: Optional[float]
+    sensor_9: Optional[float]
+    sensor_10: Optional[float]
+    sensor_11: Optional[float]
+    sensor_12: Optional[float]
+    sensor_13: Optional[float]
+    sensor_14: Optional[float]
+    sensor_15: Optional[float]
+    sensor_16: Optional[float]
+    sensor_17: Optional[float]
+    sensor_18: Optional[float]
+    sensor_19: Optional[float]
+    sensor_20: Optional[float]
+    sensor_21: Optional[float]
+    timestamp: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
-# ── Request schema: Prediction request for a specific equipment ───────
-class PredictionRequest(BaseModel):
-    equipment_id: str = Field(..., example="ENG001")
-
-
-# ── Response schema: Predicted Remaining Useful Life (RUL) ────────────
 class PredictionResponse(BaseModel):
-    equipment_id: str
-    rul_prediction: float = Field(..., description="Remaining Useful Life in cycles")
-    failure_mode: str = Field(..., example="bearing_wear")
-    confidence: float = Field(..., ge=0.0, le=1.0, example=0.85)
-    timestamp: datetime
+    engine_id: str
+    rul: float
+    confidence: float
+    failure_mode: str
+    health_score: float
+    status: str
+    model_used: Optional[str] = "ridge"
 
-    class Config:
-        from_attributes = True
 
-
-# ── Response schema: Prediction history records ───────────────────────
 class PredictionHistoryItem(BaseModel):
-    timestamp: datetime
-    rul_prediction: float
+    cycle: int
+    rul: float
+
+
+class PredictionRecordResponse(BaseModel):
+    id: int
+    engine_id: str
+    rul: float
     failure_mode: str
     confidence: float
+    health_score: float
+    status: str
+    model_used: Optional[str] = "ridge"
+    timestamp: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
 
-# ── Generic API response schemas ──────────────────────────────────────
+class ModelPredictionDetail(BaseModel):
+    model_name: str
+    model_key: str
+    status: str
+    rul: Optional[float] = None
+    uncertainty: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+class ModelRecommendation(BaseModel):
+    recommended_model: str
+    reason: str
+    rul: float
+
+
+class ModelComparisonResponse(BaseModel):
+    engine_id: str
+    consensus_rul: Optional[float]
+    overall_status: str
+    n_models_evaluated: int
+    predictions: List[ModelPredictionDetail]
+    recommendation: Optional[ModelRecommendation]
+
+
+class AvailableModelInfo(BaseModel):
+    key: str
+    name: str
+    type: str
+    features: str
+    description: str
+    available: bool
+
+
+class AvailableModelsResponse(BaseModel):
+    models: List[AvailableModelInfo]
+    total_available: int
+    total_expected: int
+
+
+class EngineInfo(BaseModel):
+    engine_id: str
+    readings_count: Optional[int] = None
+    last_prediction: Optional[datetime] = None
+    status: Optional[str] = None
+
+
+class EnginesListResponse(BaseModel):
+    engines: List[EngineInfo]
+    total: int
+
+
+class ModelsListResponse(BaseModel):
+    models: List[AvailableModelInfo]
+    total_available: int
+    total_expected: int
+
+
+class PredictRequest(BaseModel):
+    engine_id: str
+    model_name: str = "ridge"
+
+
+class CompareRequest(BaseModel):
+    engine_id: str
+
+
 class SuccessResponse(BaseModel):
-    status: str = "stored"
     id: int
+    status: str
 
 
 class HealthResponse(BaseModel):
     status: str
-    database: str
-    model: str
+
+
+class ErrorResponse(BaseModel):
+    detail: str
+    
+class MaintenanceRecommendation(BaseModel):
+    engine_id: str
+    recommended_model: str
+    consensus_rul: float
+    risk_level: str
+    recommendation: str
+    actions: List[str]
+    urgency: str
+    model_insight: Optional[str] = None
+    generated_by: str = "gemini-3-flash-preview"

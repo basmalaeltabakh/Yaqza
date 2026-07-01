@@ -3,3 +3,8 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 python-dotenv
+joblib
+numpy
+pandas
+scikit-learn
+tsfresh
