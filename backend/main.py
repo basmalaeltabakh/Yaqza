@@ -591,3 +591,69 @@ def get_history(engine_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.exception(f"Error in get_history for {engine_id}")
         raise HTTPException(status_code=500, detail=f"History error: {str(e)}")
+    
+    
+@app.get("/analyze/{engine_id}")
+def full_engine_analysis(engine_id: str, db: Session = Depends(get_db)):
+    """
+    التحليل الكامل: sensor trends + model comparison + Gemini bilingual report
+    """
+    count = crud.get_readings_count(db, engine_id)
+    if count < MIN_READINGS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"not enough readings for engine {engine_id}"
+        )
+
+    readings = crud.get_last_n_readings(db, engine_id, n=N_READINGS)
+
+    # شغّلي الـ comparison
+    try:
+        comparison = feat.predict_all_models(readings)
+    except Exception as e:
+        logger.exception(f"Comparison failed for {engine_id}")
+        raise HTTPException(status_code=500, detail=f"model comparison failed: {str(e)}")
+
+    # حوّلي النتيجة لـ format مناسب
+    predictions_list = []
+    for model_key, pred in comparison["predictions"].items():
+        entry = {
+            "model_name": model_key.replace("_model", "").replace("_", "-").upper(),
+            "model_key":  model_key,
+        }
+        if "error" in pred:
+            entry["status"] = "error"
+            entry["error"]  = pred["error"]
+        else:
+            entry["status"] = "success"
+            entry["rul"]    = pred["rul"]
+            if pred.get("uncertainty"):
+                entry["uncertainty"] = pred["uncertainty"]
+        predictions_list.append(entry)
+
+    successful   = [p for p in predictions_list if p.get("status") == "success"]
+    ngb_pred     = next((p for p in successful if p["model_key"] == "ngb_model"), None)
+    rec_info     = {
+        "recommended_model": "NGBoost" if ngb_pred else (successful[0]["model_name"] if successful else "N/A"),
+        "rul": ngb_pred["rul"] if ngb_pred else (successful[0]["rul"] if successful else 0)
+    }
+
+    comparison_formatted = {
+        "predictions":    predictions_list,
+        "consensus_rul":  comparison.get("consensus_rul"),
+        "overall_status": comparison.get("status"),
+        "recommendation": rec_info,
+    }
+
+    # كلّمي Gemini مع الـ sensor analysis
+    try:
+        result = gemini_advisor.get_full_engine_analysis(
+            engine_id=engine_id.upper(),
+            readings=readings,
+            comparison_result=comparison_formatted,
+        )
+    except Exception as e:
+        logger.exception(f"Analysis failed for {engine_id}")
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+    return result

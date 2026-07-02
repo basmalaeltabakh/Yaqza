@@ -185,3 +185,38 @@ class MaintenanceRecommendation(BaseModel):
     urgency: str
     model_insight: Optional[str] = None
     generated_by: str = "gemini-3-flash-preview"
+    
+class SensorTrend(BaseModel):
+    sensor_name: str
+    current_value: float
+    mean_value: float
+    trend: str        # "increasing" | "decreasing" | "stable"
+    trend_rate: float
+    anomaly: bool
+
+
+class EngineAnalysisResponse(BaseModel):
+    engine_id: str
+    analysis_timestamp: str
+    consensus_rul: float
+    risk_level: str
+    urgency: str
+
+    # Model comparison
+    model_predictions: List[Dict[str, Any]]
+    recommended_model: str
+
+    # Sensor analysis
+    critical_sensors: List[SensorTrend]
+    stable_sensors: List[SensorTrend]
+    total_sensors_analyzed: int
+
+    # Gemini reports
+    report_en: str
+    report_ar: str
+
+    # Actions
+    actions_en: List[str]
+    actions_ar: List[str]
+
+    generated_by: str
