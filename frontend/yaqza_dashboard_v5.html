@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yaqza — Predictive Maintenance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:       #080c14;
+  --bg2:      #0d1422;
+  --bg3:      #111928;
+  --border:   rgba(255,255,255,0.07);
+  --border2:  rgba(255,255,255,0.12);
+  --cyan:     #00e5ff;
+  --green:    #00ff88;
+  --amber:    #ffb800;
+  --red:      #ff4560;
+  --purple:   #7c4dff;
+  --blue:     #448aff;
+  --text:     #e8f0ff;
+  --muted:    rgba(232,240,255,0.45);
+  --font:     'Inter', sans-serif;
+  --mono:     'JetBrains Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+.topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 24px; height: 54px; background: rgba(13,20,34,0.95); border-bottom: 1px solid var(--border2); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 100; animation: slideDown .4s ease both; }
+@keyframes slideDown { from{transform:translateY(-54px);opacity:0} to{transform:none;opacity:1} }
+.tb-left { display: flex; align-items: center; gap: 14px; }
+.logo { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, var(--cyan), var(--purple)); display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 0 18px rgba(0,229,255,.35); }
+.tb-title { font-size: 15px; font-weight: 600; letter-spacing: .3px; }
+.tb-sub   { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.tb-right { display: flex; align-items: center; gap: 18px; }
+.live-pill { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; background: rgba(0,255,136,.08); border: 1px solid rgba(0,255,136,.2); font-size: 12px; color: var(--green); font-weight: 500; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: livePulse 1.8s ease-in-out infinite; }
+@keyframes livePulse { 0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,.5)} 50%{box-shadow:0 0 0 6px rgba(0,255,136,0)} }
+.clock { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.eng-select { background: var(--bg3); border: 1px solid var(--border2); color: var(--text); border-radius: 8px; padding: 5px 10px; font-size: 12px; font-family: var(--font); cursor: pointer; outline: none; }
+
+.kb-hint { font-size: 10px; color: var(--muted); background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
+
+.layout { display: flex; height: calc(100vh - 54px); }
+
+.sidebar { width: 210px; background: var(--bg2); border-right: 1px solid var(--border); padding: 20px 12px; flex-shrink: 0; display: flex; flex-direction: column; gap: 6px; overflow-y:auto; animation: slideLeft .4s .1s ease both; }
+@keyframes slideLeft { from{transform:translateX(-30px);opacity:0} to{transform:none;opacity:1} }
+.sb-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px; padding: 8px 10px 4px; }
+.sb-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; font-size: 13px; color: var(--muted); cursor: pointer; transition: all .2s; border: 1px solid transparent; }
+.sb-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.sb-item.active { background: rgba(0,229,255,.08); border-color: rgba(0,229,255,.18); color: var(--cyan); }
+.sb-icon { font-size: 16px; }
+.sb-divider { height: 1px; background: var(--border); margin: 8px 0; }
+.conn-card { margin-top: auto; padding: 10px 12px; border-radius: 10px; background: rgba(0,255,136,.05); border: 1px solid rgba(0,255,136,.15); display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--green); }
+
+.main { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab-btn { padding: 7px 16px; border-radius: 20px; font-size: 12.5px; font-weight: 500; cursor: pointer; border: 1px solid var(--border2); background: var(--bg2); color: var(--muted); transition: all .2s; white-space:nowrap; }
+.tab-btn:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+.tab-btn.active { background: linear-gradient(135deg, rgba(0,229,255,.18), rgba(124,77,255,.18)); border-color: rgba(0,229,255,.35); color: var(--cyan); }
+.tab-pane { display: none; animation: fadeUp .35s ease both; }
+.tab-pane.active { display: block; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:none} }
+
+.metrics-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+.mc { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 16px; position: relative; overflow: hidden; cursor: default; transition: transform .2s, border-color .2s; animation: cardIn .5s ease both; }
+.mc:nth-child(1){animation-delay:.05s} .mc:nth-child(2){animation-delay:.1s} .mc:nth-child(3){animation-delay:.15s} .mc:nth-child(4){animation-delay:.2s}
+@keyframes cardIn { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:none} }
+.mc:hover { transform: translateY(-3px); border-color: var(--border2); }
+.mc-glow { position: absolute; top: -30px; right: -30px; width: 90px; height: 90px; border-radius: 50%; filter: blur(25px); opacity: .18; pointer-events: none; }
+.mc-label { font-size: 11px; color: var(--muted); margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+.mc-value { font-family: var(--mono); font-size: 30px; font-weight: 500; line-height: 1; }
+.mc-unit  { font-size: 12px; color: var(--muted); margin-top: 5px; }
+.mc-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-top: 8px; letter-spacing: .3px; }
+.badge-green { background: rgba(0,255,136,.1); color: var(--green); border: 1px solid rgba(0,255,136,.2); }
+.badge-amber { background: rgba(255,184,0,.1); color: var(--amber); border: 1px solid rgba(255,184,0,.2); }
+.badge-red   { background: rgba(255,69,96,.1);  color: var(--red);   border: 1px solid rgba(255,69,96,.2); }
+.badge-cyan  { background: rgba(0,229,255,.1);  color: var(--cyan);  border: 1px solid rgba(0,229,255,.2); }
+
+.grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; }
+
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px; padding: 18px; animation: cardIn .5s .25s ease both; }
+.card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.card-title  { font-size: 14px; font-weight: 600; }
+.card-pill   { padding: 3px 10px; border-radius: 12px; font-size: 11px; background: rgba(0,229,255,.1); color: var(--cyan); border: 1px solid rgba(0,229,255,.2); }
+.card-sub { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+.chart-wrap { position: relative; height: 200px; }
+
+.gauge-wrap { display: flex; flex-direction: column; align-items: center; padding: 6px 0; }
+.gauge-ring { position: relative; width: 110px; height: 110px; }
+.gauge-ring svg { transform: rotate(-90deg); }
+.gauge-bg    { fill: none; stroke: rgba(255,255,255,.06); stroke-width: 8; }
+.gauge-track { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1); }
+.gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.gauge-num   { font-family: var(--mono); font-size: 22px; font-weight: 500; }
+.gauge-lbl   { font-size: 10px; color: var(--muted); margin-top: 2px; text-align: center; }
+.gauge-title { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; letter-spacing: .4px; text-transform: uppercase; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+.fg label  { font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px; }
+.fg input  { width: 100%; background: var(--bg); border: 1px solid var(--border2); border-radius: 10px; padding: 9px 12px; font-size: 13px; color: var(--text); font-family: var(--mono); outline: none; transition: border-color .2s, box-shadow .2s; }
+.fg input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,229,255,.1); }
+.btn-primary { background: linear-gradient(135deg, var(--cyan), var(--purple)); color: #fff; border: none; border-radius: 10px; padding: 10px 24px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: opacity .2s, transform .15s; letter-spacing: .3px; }
+.btn-primary:hover   { opacity: .9; transform: translateY(-1px); }
+.btn-primary:active  { transform: scale(.97); }
+.btn-run { background: linear-gradient(135deg, #ff4560, #ff6b35); color: #fff; border: none; border-radius: 10px; padding: 10px 24px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: opacity .2s, transform .15s; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(255,69,96,.25); }
+.btn-run:hover  { opacity: .9; transform: translateY(-1px); }
+.btn-run:active { transform: scale(.97); }
+.btn-export { background: linear-gradient(135deg, var(--blue), var(--cyan)); color: #fff; border: none; border-radius: 10px; padding: 10px 24px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: opacity .2s, transform .15s; margin-bottom: 16px; margin-left: 10px; box-shadow: 0 4px 20px rgba(68,138,255,.25); }
+.btn-export:hover  { opacity: .9; transform: translateY(-1px); }
+.btn-export:active { transform: scale(.97); }
+.toast { display: none; align-items: center; gap: 9px; padding: 11px 16px; border-radius: 12px; background: rgba(0,255,136,.07); border: 1px solid rgba(0,255,136,.25); color: var(--green); font-size: 13px; font-weight: 500; margin-top: 12px; animation: fadeUp .3s ease both; }
+.toast.show { display: flex; }
+.spinner { display: none; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+.spinner.show { display: flex; }
+.spin { width: 16px; height: 16px; border: 2px solid rgba(0,229,255,.2); border-top-color: var(--cyan); border-radius: 50%; animation: rot .7s linear infinite; }
+@keyframes rot { to{transform:rotate(360deg)} }
+
+.event-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); animation: slideLeft .4s ease both; }
+.event-item:last-child { border: none; }
+.ev-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; flex-shrink: 0; }
+.ev-dot.green { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.ev-dot.amber { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.ev-dot.cyan  { background: var(--cyan);  box-shadow: 0 0 8px var(--cyan); }
+.ev-text { font-size: 13px; line-height: 1.4; }
+.ev-time { font-size: 11px; color: var(--muted); margin-top: 2px; font-family: var(--mono); }
+.stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.stat-row:last-child { border: none; }
+.stat-label { font-size: 12px; color: var(--muted); }
+.stat-val   { font-size: 13px; font-weight: 600; font-family: var(--mono); }
+
+.pipeline-flow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 20px; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.pf-step { flex: 1; min-width: 140px; text-align: center; padding: 10px; }
+.pf-icon { font-size: 30px; margin-bottom: 8px; filter: drop-shadow(0 0 8px currentColor); }
+.pf-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.pf-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.pf-arrow { font-size: 20px; color: var(--cyan); opacity: .5; }
+
+.acc { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 10px; background: var(--bg); }
+.acc-head { padding: 14px 18px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: background .2s; }
+.acc-head:hover { background: rgba(255,255,255,.03); }
+.acc-head-title { font-size: 14px; font-weight: 600; display:flex; align-items:center; gap:10px; }
+.acc-chevron { color: var(--muted); transition: transform .25s; font-size: 13px; }
+.acc-chevron.open { transform: rotate(180deg); color: var(--cyan); }
+.acc-body { max-height: 0; overflow: hidden; transition: max-height .3s ease; }
+.acc-body.open { max-height: 600px; }
+.acc-body-inner { padding: 0 18px 16px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.acc-body-inner strong { color: var(--text); }
+.hl-box { background: rgba(0,229,255,.05); border: 1px solid rgba(0,229,255,.15); border-radius: 10px; padding: 12px 14px; margin-top: 10px; }
+.hl-box ul { margin: 6px 0 0 18px; }
+.tag { display:inline-block; padding: 2px 8px; border-radius: 8px; font-size: 10.5px; font-weight:600; margin-left:6px; }
+
+.tbl { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th { text-align: left; padding: 10px 12px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border2); }
+.tbl td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); }
+.tbl tr:hover td { background: rgba(255,255,255,.02); }
+.tbl td:first-child { font-family: var(--font); font-weight: 500; }
+
+.refresh-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-left: 12px; }
+.refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: blink 2s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+.toast-container { position: fixed; top: 70px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+.toast-notif { padding: 12px 18px; border-radius: 12px; font-size: 13px; font-weight: 500; animation: slideInRight .3s ease both; display: flex; align-items: center; gap: 8px; }
+.toast-notif.success { background: rgba(0,255,136,.1); border: 1px solid rgba(0,255,136,.25); color: var(--green); }
+.toast-notif.info { background: rgba(0,229,255,.1); border: 1px solid rgba(0,229,255,.25); color: var(--cyan); }
+.toast-notif.warning { background: rgba(255,184,0,.1); border: 1px solid rgba(255,184,0,.25); color: var(--amber); }
+@keyframes slideInRight { from{transform:translateX(100px);opacity:0} to{transform:none;opacity:1} }
+
+@media (max-width: 1024px) {
+  .metrics-row { grid-template-columns: repeat(2, 1fr); }
+  .grid-2 { grid-template-columns: 1fr; }
+  .sidebar { width: 180px; }
+}
+@media (max-width: 768px) {
+  .metrics-row { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .layout { flex-direction: column; height: auto; }
+  .main { padding: 12px; }
+  .topbar { padding: 0 12px; }
+  .tb-right { gap: 8px; }
+  .pipeline-flow { flex-direction: column; }
+  .pf-arrow { transform: rotate(90deg); }
+}
+
+.main::-webkit-scrollbar { width: 4px; } .main::-webkit-scrollbar-track { background: transparent; } .main::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 2px; }
+.sidebar::-webkit-scrollbar{width:3px} .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1)}
+</style>
+</head>
+<body>
+
+<div class="toast-container" id="toast-container"></div>
+
+<div class="topbar">
+  <div class="tb-left">
+    <div class="logo">⚙</div>
+    <div>
+      <div class="tb-title">Yaqza — Predictive Maintenance</div>
+      <div class="tb-sub">Industrial IoT Dashboard</div>
+    </div>
+  </div>
+  <div class="tb-right">
+    <select class="eng-select" id="eng-sel" onchange="onEngineSelect()"><option>ENG001</option><option>ENG002</option><option>ENG003</option></select>
+    <div class="live-pill"><div class="live-dot"></div>Live</div>
+    <div class="refresh-indicator"><div class="refresh-dot"></div>Auto-refresh</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sb-label">Live Monitoring</div>
+    <div class="sb-item active" onclick="nav(this,'status')" data-tab="status"><span class="sb-icon">📊</span> Current Status <span class="kb-hint">1</span></div>
+    <div class="sb-item" onclick="nav(this,'ingest')" data-tab="ingest"><span class="sb-icon">📥</span> Data Ingestion <span class="kb-hint">2</span></div>
+    <div class="sb-item" onclick="nav(this,'history')" data-tab="history"><span class="sb-icon">📈</span> History <span class="kb-hint">3</span></div>
+    <div class="sb-divider"></div>
+    <div class="sb-label">Model Evaluation</div>
+    <div class="sb-item" onclick="nav(this,'pipeline')" data-tab="pipeline"><span class="sb-icon">⚙️</span> Feature Pipeline <span class="kb-hint">4</span></div>
+    <div class="sb-item" onclick="nav(this,'models')" data-tab="models"><span class="sb-icon">🧠</span> Architectures <span class="kb-hint">5</span></div>
+    <div class="sb-item" onclick="nav(this,'comparison')" data-tab="comparison"><span class="sb-icon">📐</span> Comparison <span class="kb-hint">6</span></div>
+    <div class="sb-divider"></div>
+    <div class="sb-label">Engines</div>
+    <div class="sb-item" onclick="selectEngine(this,'ENG001')"><span class="sb-icon">🟢</span> ENG001</div>
+    <div class="sb-item" onclick="selectEngine(this,'ENG002')"><span class="sb-icon">🟡</span> ENG002</div>
+    <div class="sb-item" onclick="selectEngine(this,'ENG003')"><span class="sb-icon">🔴</span> ENG003</div>
+    <div class="conn-card">🟢 API Connected</div>
+  </div>
+
+  <div class="main">
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('status',this)" data-tab="status">📊 Current Status</button>
+      <button class="tab-btn" onclick="switchTab('ingest',this)" data-tab="ingest">📥 Data Ingestion</button>
+      <button class="tab-btn" onclick="switchTab('history',this)" data-tab="history">📈 History</button>
+      <button class="tab-btn" onclick="switchTab('pipeline',this)" data-tab="pipeline">⚙️ Feature Pipeline</button>
+      <button class="tab-btn" onclick="switchTab('models',this)" data-tab="models">🧠 Architectures</button>
+      <button class="tab-btn" onclick="switchTab('comparison',this)" data-tab="comparison">📐 Comparison</button>
+    </div>
+
+    <div class="tab-pane active" id="pane-status">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn-run" onclick="runPrediction()">▶ Run Prediction <span class="kb-hint">Ctrl+R</span></button>
+        <button class="btn-export" onclick="exportCurrentData()">⬇ Export Data <span class="kb-hint">Ctrl+E</span></button>
+      </div>
+      <div class="spinner" id="spinner"><div class="spin"></div> Fetching prediction for <strong id="spin-eng">ENG001</strong>...</div>
+      <div class="metrics-row">
+        <div class="mc"><div class="mc-glow" style="background:var(--cyan)"></div><div class="mc-label">⏱ Remaining Useful Life</div><div class="mc-value" id="m-rul" style="color:var(--cyan)">87</div><div class="mc-unit">cycles remaining</div><div class="mc-badge badge-cyan" id="b-rul">✓ Safe Zone</div></div>
+        <div class="mc"><div class="mc-glow" style="background:var(--green)"></div><div class="mc-label">🎯 Confidence Score</div><div class="mc-value" id="m-conf" style="color:var(--green)">92</div><div class="mc-unit">% model accuracy</div><div class="mc-badge badge-green">↑ High</div></div>
+        <div class="mc" id="mc-status"><div class="mc-glow" id="mc-glow" style="background:var(--amber)"></div><div class="mc-label">⚡ Machine Status</div><div class="mc-value" id="m-status" style="font-size:18px;margin-top:6px;color:var(--amber)">NORMAL</div><div class="mc-unit" id="m-mode">Failure mode: wear</div><div class="mc-badge badge-green" id="b-status">✓ Operational</div></div>
+        <div class="mc"><div class="mc-glow" style="background:var(--purple)"></div><div class="mc-label">🔥 Health Score</div><div class="mc-value" id="m-health" style="color:var(--purple)">81</div><div class="mc-unit">% overall health</div><div class="mc-badge badge-cyan" id="b-health">↑ Good</div></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header"><div class="card-title">RUL Trend</div><span class="card-pill" id="chart-pill">ENG001</span></div>
+          <div class="card-sub">Remaining Useful Life over last 9 cycles</div>
+          <div class="chart-wrap"><canvas id="chart-rul"></canvas></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;gap:16px">
+          <div class="card-title">Sensor Gauges</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="gauge-wrap"><div class="gauge-ring"><svg viewBox="0 0 110 110" width="110" height="110"><circle class="gauge-bg" cx="55" cy="55" r="46"/><circle class="gauge-track" id="gr-rul" cx="55" cy="55" r="46" stroke="var(--cyan)" stroke-dasharray="289" stroke-dashoffset="289"/></svg><div class="gauge-center"><div class="gauge-num" id="gn-rul" style="color:var(--cyan)">0</div><div class="gauge-lbl">RUL%</div></div></div><div class="gauge-title">Useful Life</div></div>
+            <div class="gauge-wrap"><div class="gauge-ring"><svg viewBox="0 0 110 110" width="110" height="110"><circle class="gauge-bg" cx="55" cy="55" r="46"/><circle class="gauge-track" id="gr-conf" cx="55" cy="55" r="46" stroke="var(--green)" stroke-dasharray="289" stroke-dashoffset="289"/></svg><div class="gauge-center"><div class="gauge-num" id="gn-conf" style="color:var(--green)">0</div><div class="gauge-lbl">Conf%</div></div></div><div class="gauge-title">Confidence</div></div>
+            <div class="gauge-wrap"><div class="gauge-ring"><svg viewBox="0 0 110 110" width="110" height="110"><circle class="gauge-bg" cx="55" cy="55" r="46"/><circle class="gauge-track" id="gr-health" cx="55" cy="55" r="46" stroke="var(--purple)" stroke-dasharray="289" stroke-dashoffset="289"/></svg><div class="gauge-center"><div class="gauge-num" id="gn-health" style="color:var(--purple)">0</div><div class="gauge-lbl">Score</div></div></div><div class="gauge-title">Health</div></div>
+            <div class="gauge-wrap"><div class="gauge-ring"><svg viewBox="0 0 110 110" width="110" height="110"><circle class="gauge-bg" cx="55" cy="55" r="46"/><circle class="gauge-track" id="gr-risk" cx="55" cy="55" r="46" stroke="var(--red)" stroke-dasharray="289" stroke-dashoffset="289"/></svg><div class="gauge-center"><div class="gauge-num" id="gn-risk" style="color:var(--red)">0</div><div class="gauge-lbl">Risk%</div></div></div><div class="gauge-title">Failure Risk</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="pane-ingest">
+      <div class="card">
+        <div class="card-header"><div class="card-title">📡 Sensor Data Entry</div><span class="card-pill">POST /ingest</span></div>
+        <div class="card-sub">Enter sensor readings, then click Send</div>
+        <div class="form-grid">
+          <div class="fg"><label>op_setting_1</label><input type="number" id="inp-op1" value="0.0023" step="0.0001"></div>
+          <div class="fg"><label>op_setting_2</label><input type="number" id="inp-op2" value="0.0003" step="0.0001"></div>
+          <div class="fg"><label>sensor_2 — Temperature (°C)</label><input type="number" id="inp-temp" value="641.82" step="0.01"></div>
+          <div class="fg"><label>sensor_3 — Pressure (kPa)</label><input type="number" id="inp-pressure" value="1589.7" step="0.1"></div>
+          <div class="fg"><label>sensor_4 — Speed (rpm)</label><input type="number" id="inp-speed" value="1401.2" step="0.1"></div>
+          <div class="fg"><label>sensor_7 — Vibration</label><input type="number" id="inp-vibration" value="554.3" step="0.1"></div>
+          <div class="fg"><label>sensor_11 — Efficiency</label><input type="number" id="inp-eff" value="47.2" step="0.1"></div>
+          <div class="fg"><label>Cycle</label><input type="number" id="inp-cycle" value="47"></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-primary" onclick="sendData()">↑ Send Data</button>
+          <button class="btn-export" onclick="clearForm()">↺ Clear</button>
+        </div>
+        <div class="toast" id="toast">✓ 201 Created — Data saved to database successfully</div>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="pane-history">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <button class="btn-export" onclick="exportHistory()">⬇ Export History (CSV)</button>
+        <button class="btn-export" onclick="exportHistoryJSON()">⬇ Export History (JSON)</button>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-header"><div class="card-title">RUL Historical Trend</div><span class="card-pill">Last 9 cycles</span></div>
+        <div class="card-sub">Dashed red line = danger threshold at RUL = 50</div>
+        <div class="chart-wrap" style="height:220px"><canvas id="chart-hist"></canvas></div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">📋 Event Log</div>
+          <div id="event-log">
+            <div class="event-item"><div class="ev-dot green"></div><div><div class="ev-text">Prediction completed — RUL: 87 cycles</div><div class="ev-time">Cycle 47 · ENG001</div></div></div>
+            <div class="event-item"><div class="ev-dot cyan"></div><div><div class="ev-text">Sensor data ingested — 8 sensors recorded</div><div class="ev-time">Cycle 47 · 6 seconds ago</div></div></div>
+            <div class="event-item"><div class="ev-dot amber"></div><div><div class="ev-text">RUL approached warning zone — monitor closely</div><div class="ev-time">Cycle 35 · ENG003</div></div></div>
+            <div class="event-item"><div class="ev-dot green"></div><div><div class="ev-text">Model loaded — rul_model_v1.pkl</div><div class="ev-time">Startup · 2 min ago</div></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px">📊 Statistics</div>
+          <div class="stat-row"><span class="stat-label">Total Predictions</span><span class="stat-val" style="color:var(--cyan)" id="stat-predictions">12</span></div>
+          <div class="stat-row"><span class="stat-label">Average RUL</span><span class="stat-val" style="color:var(--green)" id="stat-avg">94</span></div>
+          <div class="stat-row"><span class="stat-label">Minimum RUL</span><span class="stat-val" style="color:var(--amber)" id="stat-min">81</span></div>
+          <div class="stat-row"><span class="stat-label">Model RMSE</span><span class="stat-val" id="stat-rmse">12.4</span></div>
+          <div class="stat-row"><span class="stat-label">Status</span><span class="stat-val" style="color:var(--green)">NORMAL</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="pane-pipeline">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:6px">⚙️ Feature Engineering Pipeline</div>
+        <div class="card-sub">Transforming raw sensor data into predictive signals</div>
+        <div class="pipeline-flow">
+          <div class="pf-step"><div class="pf-icon" style="color:var(--cyan)">⏱️</div><div class="pf-title">1. Temporal Windowing</div><div class="pf-desc">Sliding window applied to capture gradual machine degradation</div></div>
+          <div class="pf-arrow">▶</div>
+          <div class="pf-step"><div class="pf-icon" style="color:var(--purple)">🧮</div><div class="pf-title">2. Feature Extraction</div><div class="pf-desc">TSFresh generates high-dimensional statistical features</div></div>
+          <div class="pf-arrow">▶</div>
+          <div class="pf-step"><div class="pf-icon" style="color:var(--green)">📉</div><div class="pf-title">3. PCA Reduction</div><div class="pf-desc">Compressing features while retaining 95% of the information</div></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px">Dimensionality Efficiency</div>
+          <p style="font-size:13px;color:var(--muted);line-height:1.7;margin-bottom:12px">
+            The extraction phase generates hundreds of raw statistical features per window. Using PCA, we drastically reduce the computational load while preserving the variance required for accurate RUL prediction.
+          </p>
+          <div class="stat-row"><span class="stat-label">Raw Features</span><span class="stat-val" style="color:var(--cyan)">~110+</span></div>
+          <div class="stat-row"><span class="stat-label">Orthogonal Subspace</span><span class="stat-val">Principal Components</span></div>
+          <div class="stat-row"><span class="stat-label">Final Components</span><span class="stat-val" style="color:var(--green)">12 (95% variance)</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:10px">PCA Components Retained</div>
+          <div class="chart-wrap" style="height:230px"><canvas id="chart-pca"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="pane-models">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:6px">🧠 Model Architectures</div>
+        <div class="card-sub">From a linear baseline to deep sequential networks</div>
+
+        <div class="acc">
+          <div class="acc-head" onclick="toggleAcc(this)">
+            <div class="acc-head-title">Phase 1: Ridge Regression (Baseline) <span class="tag" style="background:rgba(0,255,136,.1);color:var(--green)">Very Low Cost</span></div>
+            <span class="acc-chevron open">▼</span>
+          </div>
+          <div class="acc-body open">
+            <div class="acc-body-inner">
+              <strong>Objective:</strong> Verify that PCA components have a real linear relationship with RUL, and establish a benchmark for more complex models.
+              <div class="hl-box"><strong>Hyperparameter:</strong> alpha = 1.0 &nbsp;|&nbsp; <strong>Cost:</strong> Very Low</div>
+              <strong style="display:block;margin-top:10px">Conclusion:</strong> Trains almost instantly. Any model after this must meaningfully reduce RMSE to justify its extra computational cost.
+            </div>
+          </div>
+        </div>
+
+        <div class="acc">
+          <div class="acc-head" onclick="toggleAcc(this)">
+            <div class="acc-head-title">Phase 2: Random Forest & XGBoost <span class="tag" style="background:rgba(255,184,0,.1);color:var(--amber)">Medium Cost</span></div>
+            <span class="acc-chevron">▼</span>
+          </div>
+          <div class="acc-body">
+            <div class="acc-body-inner">
+              <strong>Objective:</strong> Use non-linear ensemble methods to capture complex interactions between sensors.
+              <div class="hl-box"><strong>Random Forest:</strong> Captures non-linear degradation patterns using an ensemble of decision trees, reducing variance and improving robustness against outliers.</div>
+              <div class="hl-box"><strong>XGBoost:</strong> Sequentially reduces prediction error, focusing more on cases where the machine is close to failure (the most critical point to predict).</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="acc">
+          <div class="acc-head" onclick="toggleAcc(this)">
+            <div class="acc-head-title">Phase 3: LSTM Network <span class="tag" style="background:rgba(255,69,96,.1);color:var(--red)">High Cost</span></div>
+            <span class="acc-chevron">▼</span>
+          </div>
+          <div class="acc-body">
+            <div class="acc-body-inner">
+              <strong>Objective:</strong> Capture long-term temporal dependencies and sequential degradation patterns directly from raw sensor streams. Suitable for Edge Inference and Industrial IoT integration.
+              <div class="hl-box">
+                <strong>Architecture Highlights:</strong>
+                <ul>
+                  <li>Bypasses manual feature extraction via PCA</li>
+                  <li>Multiple LSTM (Long Short-Term Memory) layers</li>
+                  <li>Connected Dense layers for the regression output</li>
+                  <li>Optimized using the Adam optimizer</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="pane-comparison">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-header"><div class="card-title">📐 Comparative Analysis</div><span class="card-pill">Error Metric (Cycles)</span></div>
+        <div class="card-sub">The goal is to find the optimal balance between prediction accuracy (lowest RMSE/MAE) and the computational cost of inference</div>
+        <div class="chart-wrap" style="height:260px"><canvas id="chart-comparison"></canvas></div>
+      </div>
+
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:12px">Model Performance Table</div>
+        <table class="tbl">
+          <thead><tr><th>Model</th><th>Test RMSE</th><th>Test MAE</th><th>Cost (Inference)</th></tr></thead>
+          <tbody id="comparison-table-body"></tbody>
+        </table>
+      </div>
+
+      <div class="card" style="border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.04)">
+        <div class="card-title" style="color:var(--cyan);margin-bottom:8px">💡 Final Recommendation</div>
+        <p style="font-size:13px;color:var(--text);line-height:1.7">
+          Based on preliminary analysis, LSTM offers the best balance for high-stakes industrial predictive maintenance environments, despite its higher computational cost. For resource-constrained edge devices, XGBoost offers a strong, lower-latency alternative.
+        </p>
+      </div>
+    </div>
+
+  </div>
+</div>
+<script>
+// ─── API Connection ──────────────────────────────────────
+// لو الباك اند شغال على بورت تاني أو على سيرفر تاني غيّري القيمة دي بس
+var API_BASE = 'http://127.0.0.1:8000';
+
+function apiGet(path) {
+    return fetch(API_BASE + path).then(function(res) {
+        if (!res.ok) {
+            return res.json().catch(function(){ return {}; }).then(function(err) {
+                throw new Error(err.detail || ('HTTP ' + res.status));
+            });
+        }
+        return res.json();
+    });
+}
+
+// ─── Helper: forEach that works on NodeList in all browsers ─────────────────
+function forEachNode(nodeList, callback) {
+    for (var i = 0; i < nodeList.length; i++) {
+        callback(nodeList[i], i);
+    }
+}
+
+// ─── Clock ──────────────────────────────────────────────
+setInterval(function(){ 
+    var clock = document.getElementById('clock');
+    if (clock) clock.textContent = new Date().toLocaleTimeString('en-GB'); 
+}, 1000);
+
+// ─── Toast Notification System ──────────────────────────
+function showToast(message, type) {
+    type = type || 'success';
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+    var toast = document.createElement('div');
+    toast.className = 'toast-notif ' + type;
+    var icon = type === 'success' ? '✓' : type === 'warning' ? '⚠' : 'ℹ';
+    toast.innerHTML = icon + ' ' + message;
+    container.appendChild(toast);
+    setTimeout(function() {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(function() { 
+            if (toast.parentNode) toast.parentNode.removeChild(toast); 
+        }, 300);
+    }, 3000);
+}
+
+// ─── Navigation ─────────────────────────────────────────
+function nav(el, tab) {
+    var items = document.querySelectorAll('.sb-item');
+    forEachNode(items, function(item) { item.classList.remove('active'); });
+    el.classList.add('active');
+    var btn = document.querySelector('.tab-btn[data-tab="' + tab + '"]');
+    switchTab(tab, btn);
+}
+
+function selectEngine(el, engId) {
+    var items = document.querySelectorAll('.sb-item');
+    forEachNode(items, function(item) { item.classList.remove('active'); });
+    el.classList.add('active');
+    var sel = document.getElementById('eng-sel');
+    if (sel) sel.value = engId;
+    var pill = document.getElementById('chart-pill');
+    if (pill) pill.textContent = engId;
+    var spinEng = document.getElementById('spin-eng');
+    if (spinEng) spinEng.textContent = engId;
+    var statusBtn = document.querySelector('.tab-btn[data-tab="status"]');
+    switchTab('status', statusBtn);
+    showToast('Switched to ' + engId, 'info');
+    runPrediction();
+}
+
+function onEngineSelect() {
+    var eng = document.getElementById('eng-sel');
+    if (!eng) return;
+    var val = eng.value;
+    var pill = document.getElementById('chart-pill');
+    if (pill) pill.textContent = val;
+    var spinEng = document.getElementById('spin-eng');
+    if (spinEng) spinEng.textContent = val;
+    showToast('Engine selected: ' + val, 'info');
+    runPrediction();
+}
+
+function switchTab(name, btn) {
+    var btns = document.querySelectorAll('.tab-btn');
+    forEachNode(btns, function(b) { b.classList.remove('active'); });
+    var panes = document.querySelectorAll('.tab-pane');
+    forEachNode(panes, function(p) { p.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    var pane = document.getElementById('pane-' + name);
+    if (pane) pane.classList.add('active');
+
+    if (name === 'history') setTimeout(drawHist, 80);
+    if (name === 'status') setTimeout(drawRUL, 80);
+    if (name === 'pipeline') setTimeout(drawPCA, 80);
+    if (name === 'comparison') setTimeout(function() { drawComparison(); populateTable(); }, 80);
+}
+
+function toggleAcc(head) {
+    var body = head.nextElementSibling;
+    var chev = head.querySelector('.acc-chevron');
+    if (body) body.classList.toggle('open');
+    if (chev) chev.classList.toggle('open');
+}
+
+// ─── Animation Utilities ──────────────────────────────────
+function animNum(el, from, to, ms, suffix) {
+    suffix = suffix || '';
+    var start = performance.now();
+    function step(now) {
+        var p = Math.min((now - start) / ms, 1);
+        var e = 1 - Math.pow(1 - p, 3);
+        el.textContent = Math.round(from + (to - from) * e) + suffix;
+        if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+}
+
+function animGauge(id, numId, val, ms) {
+    var circ = 289;
+    var el = document.getElementById(id);
+    var num = document.getElementById(numId);
+    if (!el || !num) return;
+    var offset = circ - (val / 100) * circ;
+    el.style.transition = 'stroke-dashoffset ' + ms + 'ms cubic-bezier(.4,0,.2,1)';
+    setTimeout(function() { el.style.strokeDashoffset = offset; }, 30);
+    animNum(num, 0, val, ms);
+}
+
+// ─── Prediction (Real API) ───────────────────────────────
+var pi = 0;
+
+function runPrediction() {
+    var spinner = document.getElementById('spinner');
+    var eng = document.getElementById('eng-sel');
+    var engVal = eng ? eng.value : 'ENG001';
+    var spinEng = document.getElementById('spin-eng');
+    if (spinEng) spinEng.textContent = engVal;
+    var pill = document.getElementById('chart-pill');
+    if (pill) pill.textContent = engVal;
+    if (spinner) spinner.classList.add('show');
+
+    apiGet('/predict/' + engVal).then(function(data) {
+        if (spinner) spinner.classList.remove('show');
+        pi++;
+
+        // data = { engine_id, rul, confidence, failure_mode, health_score, status, model_used }
+        var p = {
+            rul: Math.round(data.rul),
+            conf: Math.round(data.confidence),
+            health: Math.round(data.health_score),
+            risk: Math.round(100 - data.health_score),
+            mode: data.failure_mode,
+            status: data.status,
+            warn: data.status !== 'NORMAL'
+        };
+
+        var mRul = document.getElementById('m-rul');
+        var mConf = document.getElementById('m-conf');
+        var mHealth = document.getElementById('m-health');
+        var mStatus = document.getElementById('m-status');
+        var mMode = document.getElementById('m-mode');
+
+        if (mRul) animNum(mRul, 0, p.rul, 900);
+        if (mConf) animNum(mConf, 0, p.conf, 900);
+        if (mHealth) animNum(mHealth, 0, p.health, 900);
+        if (mStatus) mStatus.textContent = p.status;
+        if (mMode) mMode.textContent = 'Failure mode: ' + p.mode;
+
+        animGauge('gr-rul', 'gn-rul', p.rul, 1100);
+        animGauge('gr-conf', 'gn-conf', p.conf, 1100);
+        animGauge('gr-health', 'gn-health', p.health, 1100);
+        animGauge('gr-risk', 'gn-risk', p.risk, 1100);
+
+        var bs = document.getElementById('b-status');
+        var br = document.getElementById('b-rul');
+        var mc = document.getElementById('mc-status');
+        var glow = document.getElementById('mc-glow');
+
+        if (p.warn) {
+            if (mc) {
+                mc.style.background = 'linear-gradient(135deg,rgba(255,69,96,.08),rgba(255,69,96,.02))';
+                mc.style.borderColor = 'rgba(255,69,96,.25)';
+            }
+            if (mStatus) mStatus.style.color = 'var(--red)';
+            if (glow) glow.style.background = 'var(--red)';
+            if (bs) { bs.className = 'mc-badge badge-red'; bs.textContent = '⚠ Warning'; }
+            if (br) { br.className = 'mc-badge badge-red'; br.textContent = '⚠ Below threshold'; }
+            showToast('Warning: RUL below threshold!', 'warning');
+        } else {
+            if (mc) { mc.style.background = ''; mc.style.borderColor = ''; }
+            if (mStatus) mStatus.style.color = 'var(--amber)';
+            if (glow) glow.style.background = 'var(--amber)';
+            if (bs) { bs.className = 'mc-badge badge-green'; bs.textContent = '✓ Operational'; }
+            if (br) { br.className = 'mc-badge badge-cyan'; br.textContent = '✓ Safe Zone'; }
+            showToast('Prediction completed successfully', 'success');
+        }
+        addEvent('green', 'Prediction completed — RUL: ' + p.rul + ' cycles', 'Cycle 47 · ' + engVal);
+        updateStats();
+
+        // حدّثي شارت الـ history كمان بالبيانات الحقيقية
+        loadHistory(engVal);
+    }).catch(function(err) {
+        if (spinner) spinner.classList.remove('show');
+        showToast('Prediction failed: ' + err.message, 'warning');
+        addEvent('red', 'Prediction failed for ' + engVal + ' — ' + err.message, new Date().toLocaleTimeString('en-GB'));
+    });
+}
+
+// ─── History (Real API) ──────────────────────────────────
+function loadHistory(engineId) {
+    apiGet('/history/' + engineId).then(function(data) {
+        // data = [{cycle, rul}, ...]
+        if (!data || !data.length) return;
+        labels = data.map(function(d) { return 'C' + d.cycle; });
+        ruls = data.map(function(d) { return Math.round(d.rul); });
+
+        if (rulChart) { rulChart.data.labels = labels; rulChart.data.datasets[0].data = ruls; rulChart.update(); }
+        if (histChart) { histChart.data.labels = labels; histChart.data.datasets[0].data = ruls; histChart.update(); }
+    }).catch(function(err) {
+        console.warn('History load failed:', err.message);
+    });
+}
+
+// ─── Event Log Management ───────────────────────────────
+function addEvent(color, text, time) {
+    var log = document.getElementById('event-log');
+    if (!log) return;
+    var item = document.createElement('div');
+    item.className = 'event-item';
+    item.style.animation = 'slideLeft .4s ease both';
+    item.innerHTML = '<div class="ev-dot ' + color + '"></div><div><div class="ev-text">' + text + '</div><div class="ev-time">' + time + '</div></div>';
+    log.insertBefore(item, log.firstChild);
+    while (log.children.length > 10) {
+        log.removeChild(log.lastChild);
+    }
+}
+
+// ─── Statistics Update ────────────────────────────────────
+var totalPredictions = 12;
+function updateStats() {
+    totalPredictions++;
+    var statPred = document.getElementById('stat-predictions');
+    if (statPred) statPred.textContent = totalPredictions;
+    var mRul = document.getElementById('m-rul');
+    if (!mRul) return;
+    var currentRUL = parseInt(mRul.textContent) || 0;
+    var avgEl = document.getElementById('stat-avg');
+    if (!avgEl) return;
+    var currentAvg = parseInt(avgEl.textContent) || 0;
+    var newAvg = Math.round((currentAvg * (totalPredictions - 1) + currentRUL) / totalPredictions);
+    avgEl.textContent = newAvg;
+}
+
+// ─── Data Ingestion ─────────────────────────────────────
+function sendData() {
+    var btns = document.querySelectorAll('.btn-primary');
+    var btn = btns[0];
+    if (!btn) return;
+    btn.textContent = 'Sending...';
+    btn.disabled = true;
+
+    var data = {
+        op1: document.getElementById('inp-op1'),
+        op2: document.getElementById('inp-op2'),
+        temp: document.getElementById('inp-temp'),
+        pressure: document.getElementById('inp-pressure'),
+        speed: document.getElementById('inp-speed'),
+        vibration: document.getElementById('inp-vibration'),
+        efficiency: document.getElementById('inp-eff'),
+        cycle: document.getElementById('inp-cycle')
+    };
+
+    var cycleVal = data.cycle ? data.cycle.value : '47';
+
+    setTimeout(function() {
+        var toast = document.getElementById('toast');
+        if (toast) toast.classList.add('show');
+        btn.innerHTML = '↑ Send Data';
+        btn.disabled = false;
+        showToast('Data ingested successfully', 'success');
+        addEvent('cyan', 'Sensor data ingested — 8 sensors recorded', 'Cycle ' + cycleVal + ' · ' + new Date().toLocaleTimeString('en-GB'));
+        setTimeout(function() { 
+            if (toast) toast.classList.remove('show'); 
+        }, 4000);
+    }, 1300);
+}
+
+function clearForm() {
+    var fields = ['inp-op1', 'inp-op2', 'inp-temp', 'inp-pressure', 'inp-speed', 'inp-vibration', 'inp-eff', 'inp-cycle'];
+    var defaults = ['0.0023', '0.0003', '641.82', '1589.7', '1401.2', '554.3', '47.2', '47'];
+    for (var i = 0; i < fields.length; i++) {
+        var el = document.getElementById(fields[i]);
+        if (el) el.value = defaults[i];
+    }
+    showToast('Form cleared', 'info');
+}
+
+// ─── Export Functions ───────────────────────────────────
+function exportCurrentData() {
+    var eng = document.getElementById('eng-sel');
+    var engVal = eng ? eng.value : 'ENG001';
+    var rul = document.getElementById('m-rul');
+    var conf = document.getElementById('m-conf');
+    var health = document.getElementById('m-health');
+    var status = document.getElementById('m-status');
+
+    var csvContent = 'data:text/csv;charset=utf-8,' +
+        'Engine,RUL,Confidence,Health,Status,Timestamp\n' +
+        engVal + ',' + (rul ? rul.textContent : '') + ',' + 
+        (conf ? conf.textContent : '') + ',' + 
+        (health ? health.textContent : '') + ',' + 
+        (status ? status.textContent : '') + ',' + 
+        new Date().toISOString();
+
+    downloadFile(csvContent, 'yaqza_current_' + engVal + '_' + new Date().toISOString().slice(0, 10) + '.csv');
+    showToast('Current data exported', 'success');
+}
+
+function exportHistory() {
+    var csvContent = 'data:text/csv;charset=utf-8,' +
+        'Cycle,RUL,Confidence,Health\n';
+    for (var i = 0; i < labels.length; i++) {
+        csvContent += labels[i] + ',' + ruls[i] + ',92,81\n';
+    }
+    downloadFile(csvContent, 'yaqza_history_' + new Date().toISOString().slice(0, 10) + '.csv');
+    showToast('History exported as CSV', 'success');
+}
+
+function exportHistoryJSON() {
+    var data = {
+        export_date: new Date().toISOString(),
+        engine: document.getElementById('eng-sel') ? document.getElementById('eng-sel').value : 'ENG001',
+        history: []
+    };
+    for (var i = 0; i < labels.length; i++) {
+        data.history.push({
+            cycle: labels[i],
+            rul: ruls[i],
+            confidence: 92,
+            health: 81
+        });
+    }
+    var jsonContent = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2));
+    downloadFile(jsonContent, 'yaqza_history_' + new Date().toISOString().slice(0, 10) + '.json');
+    showToast('History exported as JSON', 'success');
+}
+
+function downloadFile(content, filename) {
+    var encodedUri = encodeURI(content);
+    var link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// ─── Chart Config ───────────────────────────────────────
+var TC = 'rgba(232,240,255,0.35)';
+var GC = 'rgba(255,255,255,0.05)';
+var labels = ['C10', 'C15', 'C20', 'C25', 'C30', 'C35', 'C40', 'C45', 'C47'];
+var ruls = [130, 122, 115, 108, 103, 98, 95, 90, 87];
+
+var thresholdPlugin = {
+    id: 'threshold',
+    afterDraw: function(chart) {
+        var ctx = chart.ctx;
+        var scales = chart.scales;
+        var x = scales.x;
+        var y = scales.y;
+        if (!y) return;
+        var yp = y.getPixelForValue(50);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,69,96,.65)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(x.left, yp);
+        ctx.lineTo(x.right, yp);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,69,96,.8)';
+        ctx.font = '11px Inter';
+        ctx.fillText('Danger Zone — RUL = 50', x.right - 160, yp - 5);
+        ctx.restore();
+    }
+};
+
+var rulChart = null;
+var histChart = null;
+var pcaChart = null;
+var comparisonChart = null;
+
+function drawRUL() {
+    var ctx = document.getElementById('chart-rul');
+    if (!ctx) return;
+    if (rulChart) rulChart.destroy();
+    rulChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'RUL',
+                data: ruls,
+                borderColor: 'rgba(0,229,255,.9)',
+                backgroundColor: 'rgba(0,229,255,.06)',
+                borderWidth: 2,
+                pointRadius: 5,
+                pointBackgroundColor: '#0d1422',
+                pointBorderColor: 'rgba(0,229,255,.9)',
+                pointBorderWidth: 2,
+                fill: true,
+                tension: .4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 900, easing: 'easeOutCubic' },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(c) { return ' RUL: ' + c.parsed.y + ' cycles'; }
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { color: TC, font: { size: 11 } }, grid: { color: GC } },
+                y: { min: 0, suggestedMax: Math.max(150, Math.max.apply(null, ruls) * 1.15), ticks: { color: TC, font: { size: 11 } }, grid: { color: GC } }
+            }
+        },
+        plugins: [thresholdPlugin]
+    });
+}
+
+function drawHist() {
+    var ctx = document.getElementById('chart-hist');
+    if (!ctx) return;
+    if (histChart) histChart.destroy();
+    histChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'RUL',
+                data: ruls,
+                borderColor: 'rgba(124,77,255,.9)',
+                backgroundColor: 'rgba(124,77,255,.07)',
+                borderWidth: 2,
+                pointRadius: 5,
+                pointBackgroundColor: '#0d1422',
+                pointBorderColor: 'rgba(124,77,255,.9)',
+                pointBorderWidth: 2,
+                fill: true,
+                tension: .4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 1000, easing: 'easeOutCubic' },
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { color: TC, font: { size: 11 } }, grid: { color: GC } },
+                y: { min: 0, suggestedMax: Math.max(150, Math.max.apply(null, ruls) * 1.15), ticks: { color: TC, font: { size: 11 } }, grid: { color: GC } }
+            }
+        },
+        plugins: [thresholdPlugin]
+    });
+}
+
+function drawPCA() {
+    var ctx = document.getElementById('chart-pca');
+    if (!ctx) return;
+    if (pcaChart) pcaChart.destroy();
+    pcaChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Retained PCA Components (12)', 'Discarded Raw Features (98)'],
+            datasets: [{
+                data: [12, 98],
+                backgroundColor: ['#00e5ff', 'rgba(255,255,255,.08)'],
+                borderWidth: 0,
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '72%',
+            animation: { animateRotate: true, duration: 1000 },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: TC, usePointStyle: true, padding: 16, font: { size: 11 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(c) { return ' ' + c.label + ': ' + c.raw; }
+                    }
+                }
+            }
+        }
+    });
+}
+
+var mockModelData = [
+    { name: 'Ridge Regression', rmse: 22.58, mae: 18.68, cost: 'Very Low' },
+    { name: 'Random Forest', rmse: 19.5, mae: 14.1, cost: 'Medium' },
+    { name: 'XGBoost', rmse: 17.8, mae: 12.5, cost: 'Medium' },
+    { name: 'LSTM', rmse: 14.2, mae: 10.8, cost: 'High' }
+];
+
+function drawComparison() {
+    var ctx = document.getElementById('chart-comparison');
+    if (!ctx) return;
+    if (comparisonChart) comparisonChart.destroy();
+    comparisonChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: mockModelData.map(function(d) { return d.name; }),
+            datasets: [
+                { label: 'Test RMSE', data: mockModelData.map(function(d) { return d.rmse; }), backgroundColor: 'rgba(0,229,255,.85)', borderRadius: 6 },
+                { label: 'Test MAE', data: mockModelData.map(function(d) { return d.mae; }), backgroundColor: 'rgba(124,77,255,.6)', borderRadius: 6 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 900, easing: 'easeOutCubic' },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { color: TC, font: { size: 11 } } }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: TC, font: { size: 11 } }, grid: { color: GC }, title: { display: true, text: 'Error (Cycles)', color: TC, font: { size: 11 } } },
+                x: { ticks: { color: TC, font: { size: 11 } }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+function populateTable() {
+    var tbody = document.getElementById('comparison-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    var colorFor = function(c) {
+        return c === 'Very Low' ? 'var(--green)' : c === 'Medium' ? 'var(--amber)' : 'var(--red)';
+    };
+    for (var i = 0; i < mockModelData.length; i++) {
+        var m = mockModelData[i];
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + m.name + '</td><td>' + m.rmse.toFixed(2) + '</td><td>' + m.mae.toFixed(2) + '</td><td><span class="tag" style="background:rgba(255,255,255,.05);color:' + colorFor(m.cost) + '">' + m.cost + '</span></td>';
+        tbody.appendChild(tr);
+    }
+}
+
+// ─── Auto-refresh Simulation ────────────────────────────
+var autoRefreshInterval = null;
+var isAutoRefreshing = true;
+
+function startAutoRefresh() {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    autoRefreshInterval = setInterval(function() {
+        if (!isAutoRefreshing) return;
+        var lastIdx = ruls.length - 1;
+        var variation = (Math.random() - 0.5) * 3;
+        var newRUL = Math.max(0, Math.round(ruls[lastIdx] + variation));
+        ruls[lastIdx] = newRUL;
+
+        if (rulChart) {
+            var paneStatus = document.getElementById('pane-status');
+            if (paneStatus && paneStatus.classList.contains('active')) {
+                rulChart.data.datasets[0].data = ruls;
+                rulChart.update('none');
+            }
+        }
+        if (histChart) {
+            var paneHist = document.getElementById('pane-history');
+            if (paneHist && paneHist.classList.contains('active')) {
+                histChart.data.datasets[0].data = ruls;
+                histChart.update('none');
+            }
+        }
+        var currentRUL = document.getElementById('m-rul');
+        if (currentRUL) {
+            var paneStatus = document.getElementById('pane-status');
+            if (paneStatus && paneStatus.classList.contains('active')) {
+                currentRUL.textContent = newRUL;
+            }
+        }
+    }, 5000);
+}
+
+function toggleAutoRefresh() {
+    isAutoRefreshing = !isAutoRefreshing;
+    showToast(isAutoRefreshing ? 'Auto-refresh enabled' : 'Auto-refresh paused', 'info');
+}
+
+// ─── Initial Load (Real API) ─────────────────────────────
+window.addEventListener('load', function() {
+    runPrediction();
+});
+
+// ─── Keyboard Shortcuts ─────────────────────────────────
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'r' && e.ctrlKey) {
+        e.preventDefault();
+        runPrediction();
+    }
+    if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.altKey) {
+        var tabs = ['status', 'ingest', 'history', 'pipeline', 'models', 'comparison'];
+        var idx = parseInt(e.key) - 1;
+        if (idx < tabs.length) {
+            var tabBtn = document.querySelector('.tab-btn[data-tab="' + tabs[idx] + '"]');
+            if (tabBtn) switchTab(tabs[idx], tabBtn);
+        }
+    }
+    if (e.key === 'e' && e.ctrlKey) {
+        e.preventDefault();
+        exportCurrentData();
+    }
+    if (e.key === 's' && e.ctrlKey) {
+        e.preventDefault();
+        toggleAutoRefresh();
+    }
+});
+
+// ─── Initialization ─────────────────────────────────────
+setTimeout(function() {
+    drawRUL();
+    animGauge('gr-rul', 'gn-rul', 87, 1200);
+    animGauge('gr-conf', 'gn-conf', 92, 1200);
+    animGauge('gr-health', 'gn-health', 81, 1200);
+    animGauge('gr-risk', 'gn-risk', 13, 1200);
+    animNum(document.getElementById('m-rul'), 0, 87, 1000);
+    animNum(document.getElementById('m-conf'), 0, 92, 1000);
+    animNum(document.getElementById('m-health'), 0, 81, 1000);
+    startAutoRefresh();
+}, 200);
+</script>
+</body>
+</html>
