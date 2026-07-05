@@ -44,3 +44,22 @@ pytest>=7.4.0
 pytest-cov>=4.1.0
 
 
+fastapi==0.111.0
+uvicorn[standard]==0.30.0
+gunicorn==23.0.0
+sqlalchemy==2.0.31
+alembic==1.13.2
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+joblib==1.4.2
+xgboost==2.1.0
+ngboost==0.5.2
+tensorflow==2.16.1
+tsfresh==0.20.3
+google-generativeai==0.7.2
+python-dotenv==1.0.1
+pydantic==2.8.2
+pydantic-settings==2.3.4
+httpx==0.27.0
+python-json-logger==2.0.7
