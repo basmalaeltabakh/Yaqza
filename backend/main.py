@@ -68,6 +68,7 @@ sys.modules['__main__'].TSFreshFeaturesSelector = feat.TSFreshFeaturesSelector
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+import os
 import crud
 from database import get_db, init_db
 from schemas import (
@@ -95,13 +96,52 @@ app = FastAPI(
     version="0.2.0"
 )
 
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip()
+
+# ═════════════════════════════════════════════════════════════════════════════
+# CORS CONFIGURATION - Handles both standalone and Streamlit iframe modes
+# ═════════════════════════════════════════════════════════════════════════════
+# CRITICAL: Streamlit components run in sandboxed iframes with "null" origin
+# The "*" wildcard does NOT match "null" origin - must handle explicitly
+# Reference: https://discuss.streamlit.io/t/issues-calling-an-api-endpoint-from-react-custom-component/6870
+
+_default_origins = [
+    "http://localhost:8501",      # Streamlit default
+    "http://127.0.0.1:8501",
+    "http://localhost:3000",      # React dev server
+    "http://127.0.0.1:3000",
+    "http://localhost:8080",      # Other common ports
+    "http://127.0.0.1:8080",
+    "null",                       # Streamlit sandboxed iframe origin
+]
+
+env_origins = os.getenv("ALLOWED_ORIGINS", "")
+if env_origins and env_origins != "*":
+    allowed_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+    if "null" not in allowed_origins:
+        allowed_origins.append("null")  # Always allow null for Streamlit
+else:
+    allowed_origins = _default_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Total-Count"],
+    max_age=600,
 )
+
+# Additional CORS handler for preflight requests from null origin
+@app.middleware("http")
+async def add_cors_headers(request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin", "")
+    if origin == "null" or not origin:
+        response.headers["Access-Control-Allow-Origin"] = "null"
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 N_READINGS = 40
 MIN_READINGS = 30
@@ -261,6 +301,15 @@ def list_models(db: Session = Depends(get_db)):
 @app.get("/health", response_model=HealthResponse)
 def health_check():
     return HealthResponse(status="ok")
+
+@app.get("/status")
+def public_status():
+    return {
+        "status": "ok",
+        "service": "yaqza-api",
+        "public_base_url": PUBLIC_BASE_URL or None,
+        "models_available": sorted([k for k in MODEL_MAP.keys()]),
+    }
 
 
 @app.post("/ingest", response_model=SuccessResponse, status_code=201)

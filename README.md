@@ -68,6 +68,27 @@ yaqza/
 
 ---
 
+## Local API + Dashboard
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r backend/requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8000
+streamlit run frontend/app.py
+```
+
+## Docker deployment
+```bash
+docker build -t yaqza-api .
+docker run -p 8000:8000 yaqza-api
+```
+
+## Azure Container Apps deployment
+```bash
+az group create --name yaqza-rg --location eastus
+az deployment group create --resource-group yaqza-rg --template-file infra/main.bicep
+```
+
 ## Setup (Do This First — Everyone)
 
 ### 1. Clone the repo

@@ -188,6 +188,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .main::-webkit-scrollbar { width: 4px; } .main::-webkit-scrollbar-track { background: transparent; } .main::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 2px; }
 .sidebar::-webkit-scrollbar{width:3px} .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1)}
 </style>
+<base target="_blank">
 </head>
 <body>
 
@@ -203,6 +204,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
   </div>
   <div class="tb-right">
     <select class="eng-select" id="eng-sel" onchange="onEngineSelect()"><option>ENG001</option><option>ENG002</option><option>ENG003</option></select>
+    <select class="eng-select" id="model-sel" onchange="onModelSelect()" title="Select prediction model">
+      <option value="ridge">Ridge Regression</option>
+    </select>
     <div class="live-pill"><div class="live-dot"></div>Live</div>
     <div class="refresh-indicator"><div class="refresh-dot"></div>Auto-refresh</div>
     <div class="clock" id="clock">--:--:--</div>
@@ -220,6 +224,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
     <div class="sb-item" onclick="nav(this,'pipeline')" data-tab="pipeline"><span class="sb-icon">⚙️</span> Feature Pipeline <span class="kb-hint">4</span></div>
     <div class="sb-item" onclick="nav(this,'models')" data-tab="models"><span class="sb-icon">🧠</span> Architectures <span class="kb-hint">5</span></div>
     <div class="sb-item" onclick="nav(this,'comparison')" data-tab="comparison"><span class="sb-icon">📐</span> Comparison <span class="kb-hint">6</span></div>
+    <div class="sb-item" onclick="nav(this,'recommendation')" data-tab="recommendation"><span class="sb-icon">🛠️</span> Recommendations <span class="kb-hint">7</span></div>
     <div class="sb-divider"></div>
     <div class="sb-label">Engines</div>
     <div class="sb-item" onclick="selectEngine(this,'ENG001')"><span class="sb-icon">🟢</span> ENG001</div>
@@ -236,6 +241,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
       <button class="tab-btn" onclick="switchTab('pipeline',this)" data-tab="pipeline">⚙️ Feature Pipeline</button>
       <button class="tab-btn" onclick="switchTab('models',this)" data-tab="models">🧠 Architectures</button>
       <button class="tab-btn" onclick="switchTab('comparison',this)" data-tab="comparison">📐 Comparison</button>
+      <button class="tab-btn" onclick="switchTab('recommendation',this)" data-tab="recommendation">🛠️ Recommendations</button>
     </div>
 
     <div class="tab-pane active" id="pane-status">
@@ -414,18 +420,32 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
       </div>
 
       <div class="card" style="margin-bottom:14px">
-        <div class="card-title" style="margin-bottom:12px">Model Performance Table</div>
+        <div class="card-header" style="margin-bottom:12px">
+          <div class="card-title">Model Performance Table</div>
+          <button class="btn-export" onclick="exportComparisonResults()">⬇ Export Comparison</button>
+        </div>
         <table class="tbl">
-          <thead><tr><th>Model</th><th>Test RMSE</th><th>Test MAE</th><th>Cost (Inference)</th></tr></thead>
+          <thead><tr><th>Model</th><th>Predicted RUL</th><th>Status</th><th>Recommendation</th></tr></thead>
           <tbody id="comparison-table-body"></tbody>
         </table>
       </div>
 
       <div class="card" style="border-color:rgba(0,229,255,.25);background:rgba(0,229,255,.04)">
         <div class="card-title" style="color:var(--cyan);margin-bottom:8px">💡 Final Recommendation</div>
-        <p style="font-size:13px;color:var(--text);line-height:1.7">
-          Based on preliminary analysis, LSTM offers the best balance for high-stakes industrial predictive maintenance environments, despite its higher computational cost. For resource-constrained edge devices, XGBoost offers a strong, lower-latency alternative.
+        <p id="comparison-summary" style="font-size:13px;color:var(--text);line-height:1.7">
+          Comparison results will appear here after the backend finishes evaluating all available models.
         </p>
+      </div>
+    </div>
+
+    <div class="tab-pane" id="pane-recommendation">
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-header"><div class="card-title">🛠️ Maintenance Recommendation</div><span class="card-pill" id="rec-pill">ENG001</span></div>
+        <div class="card-sub">Live recommendations from the backend maintenance analysis engine</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn-primary" onclick="loadRecommendation()">⚡ Refresh Recommendation</button>
+        </div>
+        <div id="recommendation-content" style="display:flex;flex-direction:column;gap:12px"></div>
       </div>
     </div>
 
@@ -433,8 +453,27 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 </div>
 <script>
 // ─── API Connection ──────────────────────────────────────
-// لو الباك اند شغال على بورت تاني أو على سيرفر تاني غيّري القيمة دي بس
-var API_BASE = 'http://127.0.0.1:8000';
+// API Configuration - Change this to your FastAPI server URL
+// For local development: http://127.0.0.1:8000
+// For production: your deployed API URL
+var API_BASE = window.YAQZA_API_BASE || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://127.0.0.1:8000'
+    : (window.YAQZA_API_BASE || 'http://127.0.0.1:8000');
+
+// Store last prediction data globally for exports
+var lastPredictionData = null;
+var lastHistoryData = [];
+var lastComparisonData = null;
+
+// Helper: timeout wrapper for fetch
+function fetchWithTimeout(url, options, timeout = 15000) {
+    return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request timeout')), timeout)
+        )
+    ]);
+}
 
 function apiGet(path) {
     return fetch(API_BASE + path).then(function(res) {
@@ -444,6 +483,42 @@ function apiGet(path) {
             });
         }
         return res.json();
+    });
+}
+
+function getSelectedModel() {
+    var select = document.getElementById('model-sel');
+    return select ? select.value : 'ridge';
+}
+
+function loadAvailableModels() {
+    apiGet('/models').then(function(data) {
+        var select = document.getElementById('model-sel');
+        if (!select) return;
+        var current = select.value || 'ridge';
+        select.innerHTML = '';
+        var availableModels = (data.models || []).filter(function(model) { return model.available; });
+        if (!availableModels.length) {
+            var fallback = document.createElement('option');
+            fallback.value = 'ridge';
+            fallback.textContent = 'Ridge Regression';
+            select.appendChild(fallback);
+            return;
+        }
+        availableModels.forEach(function(model) {
+            var option = document.createElement('option');
+            var value = model.key === 'ridge_model' ? 'ridge' : model.key === 'rf_model' ? 'rf' : model.key === 'xgb_model' ? 'xgboost' : model.key === 'ngb_model' ? 'ngboost' : model.key === 'cnn_lstm_model' ? 'cnn_lstm' : model.key.replace('_model', '');
+            option.value = value;
+            option.textContent = model.name;
+            select.appendChild(option);
+        });
+        if (Array.from(select.options).some(function(option) { return option.value === current; })) {
+            select.value = current;
+        } else {
+            select.value = select.options[0].value;
+        }
+    }).catch(function(err) {
+        console.warn('Model list load failed:', err.message);
     });
 }
 
@@ -503,6 +578,7 @@ function selectEngine(el, engId) {
     switchTab('status', statusBtn);
     showToast('Switched to ' + engId, 'info');
     runPrediction();
+    loadRecommendation();
 }
 
 function onEngineSelect() {
@@ -515,6 +591,14 @@ function onEngineSelect() {
     if (spinEng) spinEng.textContent = val;
     showToast('Engine selected: ' + val, 'info');
     runPrediction();
+    loadRecommendation();
+    loadComparison();
+}
+
+function onModelSelect() {
+    showToast('Model selected: ' + getSelectedModel(), 'info');
+    runPrediction();
+    loadComparison();
 }
 
 function switchTab(name, btn) {
@@ -529,7 +613,8 @@ function switchTab(name, btn) {
     if (name === 'history') setTimeout(drawHist, 80);
     if (name === 'status') setTimeout(drawRUL, 80);
     if (name === 'pipeline') setTimeout(drawPCA, 80);
-    if (name === 'comparison') setTimeout(function() { drawComparison(); populateTable(); }, 80);
+    if (name === 'comparison') setTimeout(loadComparison, 80);
+    if (name === 'recommendation') setTimeout(loadRecommendation, 80);
 }
 
 function toggleAcc(head) {
@@ -570,15 +655,19 @@ function runPrediction() {
     var spinner = document.getElementById('spinner');
     var eng = document.getElementById('eng-sel');
     var engVal = eng ? eng.value : 'ENG001';
+    var modelName = getSelectedModel();
     var spinEng = document.getElementById('spin-eng');
-    if (spinEng) spinEng.textContent = engVal;
+    if (spinEng) spinEng.textContent = engVal + ' • ' + modelName;
     var pill = document.getElementById('chart-pill');
     if (pill) pill.textContent = engVal;
     if (spinner) spinner.classList.add('show');
 
-    apiGet('/predict/' + engVal).then(function(data) {
+    apiGet('/predict/' + engVal + '/model/' + modelName).then(function(data) {
         if (spinner) spinner.classList.remove('show');
         pi++;
+
+        // Store prediction data globally for exports
+        lastPredictionData = data;
 
         // data = { engine_id, rul, confidence, failure_mode, health_score, status, model_used }
         var p = {
@@ -597,9 +686,9 @@ function runPrediction() {
         var mStatus = document.getElementById('m-status');
         var mMode = document.getElementById('m-mode');
 
-        if (mRul) animNum(mRul, 0, p.rul, 900);
-        if (mConf) animNum(mConf, 0, p.conf, 900);
-        if (mHealth) animNum(mHealth, 0, p.health, 900);
+        if (mRul) animNum(mRul, parseInt(mRul.textContent) || 0, p.rul, 900);
+        if (mConf) animNum(mConf, parseInt(mConf.textContent) || 0, p.conf, 900);
+        if (mHealth) animNum(mHealth, parseInt(mHealth.textContent) || 0, p.health, 900);
         if (mStatus) mStatus.textContent = p.status;
         if (mMode) mMode.textContent = 'Failure mode: ' + p.mode;
 
@@ -631,10 +720,10 @@ function runPrediction() {
             if (br) { br.className = 'mc-badge badge-cyan'; br.textContent = '✓ Safe Zone'; }
             showToast('Prediction completed successfully', 'success');
         }
-        addEvent('green', 'Prediction completed — RUL: ' + p.rul + ' cycles', 'Cycle 47 · ' + engVal);
+        addEvent('green', 'Prediction completed — RUL: ' + p.rul + ' cycles (' + modelName + ')', 'Cycle ' + (data.cycle || 'latest') + ' · ' + engVal);
         updateStats();
 
-        // حدّثي شارت الـ history كمان بالبيانات الحقيقية
+        // Update history chart with real data
         loadHistory(engVal);
     }).catch(function(err) {
         if (spinner) spinner.classList.remove('show');
@@ -647,15 +736,46 @@ function runPrediction() {
 function loadHistory(engineId) {
     apiGet('/history/' + engineId).then(function(data) {
         // data = [{cycle, rul}, ...]
-        if (!data || !data.length) return;
+        if (!data || !data.length) {
+            console.warn('No history data for ' + engineId);
+            return;
+        }
+        lastHistoryData = data;  // Store globally for exports
         labels = data.map(function(d) { return 'C' + d.cycle; });
         ruls = data.map(function(d) { return Math.round(d.rul); });
 
-        if (rulChart) { rulChart.data.labels = labels; rulChart.data.datasets[0].data = ruls; rulChart.update(); }
-        if (histChart) { histChart.data.labels = labels; histChart.data.datasets[0].data = ruls; histChart.update(); }
+        if (rulChart) { 
+            rulChart.data.labels = labels; 
+            rulChart.data.datasets[0].data = ruls; 
+            rulChart.update(); 
+        }
+        if (histChart) { 
+            histChart.data.labels = labels; 
+            histChart.data.datasets[0].data = ruls; 
+            histChart.update(); 
+        }
+
+        // Update statistics
+        updateStatsFromHistory(data);
+
+        showToast('History loaded: ' + data.length + ' records', 'success');
     }).catch(function(err) {
         console.warn('History load failed:', err.message);
+        showToast('History load failed: ' + err.message, 'warning');
     });
+}
+
+function updateStatsFromHistory(data) {
+    if (!data || !data.length) return;
+    var avgRUL = Math.round(data.reduce(function(sum, d) { return sum + d.rul; }, 0) / data.length);
+    var minRUL = Math.min.apply(null, data.map(function(d) { return d.rul; }));
+
+    var statAvg = document.getElementById('stat-avg');
+    if (statAvg) statAvg.textContent = avgRUL;
+    var statMin = document.getElementById('stat-min');
+    if (statMin) statMin.textContent = minRUL;
+    var statPred = document.getElementById('stat-predictions');
+    if (statPred) statPred.textContent = data.length;
 }
 
 // ─── Event Log Management ───────────────────────────────
@@ -688,6 +808,42 @@ function updateStats() {
     avgEl.textContent = newAvg;
 }
 
+function loadRecommendation() {
+    var eng = document.getElementById('eng-sel');
+    var engVal = eng ? eng.value : 'ENG001';
+    var pill = document.getElementById('rec-pill');
+    if (pill) pill.textContent = engVal;
+
+    var container = document.getElementById('recommendation-content');
+    if (container) {
+        container.innerHTML = '<div class="spinner show" style="margin-bottom:0"><div class="spin"></div> Loading maintenance recommendation...</div>';
+    }
+
+    Promise.all([
+        apiGet('/recommend/' + engVal),
+        apiGet('/analyze/' + engVal)
+    ]).then(function(results) {
+        var rec = results[0] || {};
+        var analysis = results[1] || {};
+        if (!container) return;
+
+        var html = [];
+        html.push('<div class="hl-box"><strong>Recommended Model:</strong> ' + (rec.recommended_model || 'N/A') + '<br><strong>Consensus RUL:</strong> ' + (rec.consensus_rul || analysis.consensus_rul || 'N/A') + ' cycles<br><strong>Risk Level:</strong> ' + (rec.risk_level || 'N/A') + '<br><strong>Urgency:</strong> ' + (rec.urgency || 'N/A') + '</div>');
+        html.push('<div class="card" style="padding:14px;border-color:rgba(0,229,255,.2)"><div class="card-title" style="margin-bottom:8px">🧠 Recommendation</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + (rec.recommendation || 'No recommendation returned yet.') + '</p></div>');
+        html.push('<div class="card" style="padding:14px;border-color:rgba(255,184,0,.2)"><div class="card-title" style="margin-bottom:8px">⚠️ Recommended Actions</div><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + (rec.actions || []).map(function(a){ return '<li>' + a + '</li>'; }).join('') + '</ul></div>');
+        html.push('<div class="card" style="padding:14px;border-color:rgba(0,255,136,.2)"><div class="card-title" style="margin-bottom:8px">📈 Model Insight</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + (rec.model_insight || analysis.model_insight_en || 'No model insight available.') + '</p></div>');
+        if (analysis.critical_sensors && analysis.critical_sensors.length) {
+            var sensorList = analysis.critical_sensors.slice(0, 5).map(function(s){ return '<li><strong>' + s.sensor_name + '</strong> — ' + s.trend + ' (' + s.trend_rate + '/cycle)</li>'; }).join('');
+            html.push('<div class="card" style="padding:14px;border-color:rgba(255,69,96,.2)"><div class="card-title" style="margin-bottom:8px">🔎 Critical Sensors</div><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + sensorList + '</ul></div>');
+        }
+        container.innerHTML = html.join('');
+        showToast('Recommendation refreshed for ' + engVal, 'success');
+    }).catch(function(err) {
+        if (container) container.innerHTML = '<div class="hl-box" style="border-color:rgba(255,69,96,.25)"><strong>Recommendation unavailable:</strong> ' + err.message + '</div>';
+        showToast('Recommendation request failed: ' + err.message, 'warning');
+    });
+}
+
 // ─── Data Ingestion ─────────────────────────────────────
 function sendData() {
     var btns = document.querySelectorAll('.btn-primary');
@@ -695,6 +851,9 @@ function sendData() {
     if (!btn) return;
     btn.textContent = 'Sending...';
     btn.disabled = true;
+
+    var eng = document.getElementById('eng-sel');
+    var engVal = eng ? eng.value : 'ENG001';
 
     var data = {
         op1: document.getElementById('inp-op1'),
@@ -707,19 +866,55 @@ function sendData() {
         cycle: document.getElementById('inp-cycle')
     };
 
-    var cycleVal = data.cycle ? data.cycle.value : '47';
+    var cycleVal = data.cycle ? parseInt(data.cycle.value) || 1 : 1;
 
-    setTimeout(function() {
+    // Build payload matching SensorReadingCreate schema
+    var payload = {
+        engine_id: engVal,
+        cycle: cycleVal,
+        setting_1: data.op1 ? parseFloat(data.op1.value) || 0 : 0,
+        setting_2: data.op2 ? parseFloat(data.op2.value) || 0 : 0,
+        setting_3: 0,  // Default value
+        sensor_1: 0, sensor_2: data.temp ? parseFloat(data.temp.value) || 0 : 0,
+        sensor_3: data.pressure ? parseFloat(data.pressure.value) || 0 : 0,
+        sensor_4: data.speed ? parseFloat(data.speed.value) || 0 : 0,
+        sensor_5: 0, sensor_6: 0,
+        sensor_7: data.vibration ? parseFloat(data.vibration.value) || 0 : 0,
+        sensor_8: 0, sensor_9: 0, sensor_10: 0,
+        sensor_11: data.efficiency ? parseFloat(data.efficiency.value) || 0 : 0,
+        sensor_12: 0, sensor_13: 0, sensor_14: 0, sensor_15: 0,
+        sensor_16: 0, sensor_17: 0, sensor_18: 0, sensor_19: 0,
+        sensor_20: 0, sensor_21: 0
+    };
+
+    fetchWithTimeout(API_BASE + '/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    })
+    .then(function(result) {
         var toast = document.getElementById('toast');
         if (toast) toast.classList.add('show');
         btn.innerHTML = '↑ Send Data';
         btn.disabled = false;
-        showToast('Data ingested successfully', 'success');
-        addEvent('cyan', 'Sensor data ingested — 8 sensors recorded', 'Cycle ' + cycleVal + ' · ' + new Date().toLocaleTimeString('en-GB'));
+        showToast('✓ Data ingested successfully (ID: ' + (result.id || 'N/A') + ')', 'success');
+        addEvent('cyan', 'Sensor data ingested — 8 sensors recorded for ' + engVal, 'Cycle ' + cycleVal + ' · ' + new Date().toLocaleTimeString('en-GB'));
         setTimeout(function() { 
             if (toast) toast.classList.remove('show'); 
         }, 4000);
-    }, 1300);
+        // Auto-run prediction after ingestion
+        setTimeout(runPrediction, 500);
+    })
+    .catch(function(err) {
+        btn.innerHTML = '↑ Send Data';
+        btn.disabled = false;
+        showToast('❌ Ingest failed: ' + err.message, 'warning');
+        addEvent('red', 'Ingest failed for ' + engVal + ' — ' + err.message, new Date().toLocaleTimeString('en-GB'));
+    });
 }
 
 function clearForm() {
@@ -764,21 +959,41 @@ function exportHistory() {
 }
 
 function exportHistoryJSON() {
+    var eng = document.getElementById('eng-sel');
+    var engVal = eng ? eng.value : 'ENG001';
+
     var data = {
         export_date: new Date().toISOString(),
-        engine: document.getElementById('eng-sel') ? document.getElementById('eng-sel').value : 'ENG001',
+        engine: engVal,
+        api_base: API_BASE,
+        prediction: lastPredictionData,
         history: []
     };
-    for (var i = 0; i < labels.length; i++) {
-        data.history.push({
-            cycle: labels[i],
-            rul: ruls[i],
-            confidence: 92,
-            health: 81
+
+    // Use real history data if available
+    var dataToExport = (lastHistoryData && lastHistoryData.length > 0) ? lastHistoryData : [];
+
+    if (dataToExport.length === 0) {
+        for (var i = 0; i < labels.length; i++) {
+            data.history.push({
+                cycle: labels[i],
+                rul: ruls[i],
+                confidence: lastPredictionData ? lastPredictionData.confidence : 92,
+                health: lastPredictionData ? lastPredictionData.health_score : 81,
+                status: lastPredictionData ? lastPredictionData.status : 'NORMAL'
+            });
+        }
+    } else {
+        data.history = dataToExport.map(function(d) {
+            return {
+                cycle: 'C' + d.cycle,
+                rul: d.rul
+            };
         });
     }
+
     var jsonContent = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2));
-    downloadFile(jsonContent, 'yaqza_history_' + new Date().toISOString().slice(0, 10) + '.json');
+    downloadFile(jsonContent, 'yaqza_history_' + engVal + '_' + new Date().toISOString().slice(0, 10) + '.json');
     showToast('History exported as JSON', 'success');
 }
 
@@ -941,12 +1156,7 @@ function drawPCA() {
     });
 }
 
-var mockModelData = [
-    { name: 'Ridge Regression', rmse: 22.58, mae: 18.68, cost: 'Very Low' },
-    { name: 'Random Forest', rmse: 19.5, mae: 14.1, cost: 'Medium' },
-    { name: 'XGBoost', rmse: 17.8, mae: 12.5, cost: 'Medium' },
-    { name: 'LSTM', rmse: 14.2, mae: 10.8, cost: 'High' }
-];
+var liveModelData = [];
 
 function drawComparison() {
     var ctx = document.getElementById('chart-comparison');
@@ -955,22 +1165,23 @@ function drawComparison() {
     comparisonChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: mockModelData.map(function(d) { return d.name; }),
-            datasets: [
-                { label: 'Test RMSE', data: mockModelData.map(function(d) { return d.rmse; }), backgroundColor: 'rgba(0,229,255,.85)', borderRadius: 6 },
-                { label: 'Test MAE', data: mockModelData.map(function(d) { return d.mae; }), backgroundColor: 'rgba(124,77,255,.6)', borderRadius: 6 }
-            ]
+            labels: liveModelData.map(function(d) { return d.name; }),
+            datasets: [{
+                label: 'Predicted RUL',
+                data: liveModelData.map(function(d) { return d.rul; }),
+                backgroundColor: 'rgba(0,229,255,.85)',
+                borderRadius: 6
+            }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             animation: { duration: 900, easing: 'easeOutCubic' },
-            interaction: { mode: 'index', intersect: false },
             plugins: {
                 legend: { position: 'top', labels: { color: TC, font: { size: 11 } } }
             },
             scales: {
-                y: { beginAtZero: true, ticks: { color: TC, font: { size: 11 } }, grid: { color: GC }, title: { display: true, text: 'Error (Cycles)', color: TC, font: { size: 11 } } },
+                y: { beginAtZero: true, ticks: { color: TC, font: { size: 11 } }, grid: { color: GC }, title: { display: true, text: 'RUL (cycles)', color: TC, font: { size: 11 } } },
                 x: { ticks: { color: TC, font: { size: 11 } }, grid: { display: false } }
             }
         }
@@ -981,15 +1192,64 @@ function populateTable() {
     var tbody = document.getElementById('comparison-table-body');
     if (!tbody) return;
     tbody.innerHTML = '';
-    var colorFor = function(c) {
-        return c === 'Very Low' ? 'var(--green)' : c === 'Medium' ? 'var(--amber)' : 'var(--red)';
-    };
-    for (var i = 0; i < mockModelData.length; i++) {
-        var m = mockModelData[i];
+    for (var i = 0; i < liveModelData.length; i++) {
+        var m = liveModelData[i];
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + m.name + '</td><td>' + m.rmse.toFixed(2) + '</td><td>' + m.mae.toFixed(2) + '</td><td><span class="tag" style="background:rgba(255,255,255,.05);color:' + colorFor(m.cost) + '">' + m.cost + '</span></td>';
+        var badgeColor = m.status === 'success' ? 'var(--green)' : 'var(--amber)';
+        var badgeText = m.status === 'success' ? 'Live' : (m.status === 'error' ? 'Unavailable' : 'Pending');
+        tr.innerHTML = '<td>' + m.name + '</td><td>' + (m.rul !== null && m.rul !== undefined ? m.rul.toFixed(1) : '—') + '</td><td><span class="tag" style="background:rgba(255,255,255,.05);color:' + badgeColor + '">' + badgeText + '</span></td><td>' + (m.recommended ? '✓ Recommended' : '—') + '</td>';
         tbody.appendChild(tr);
     }
+}
+
+function exportComparisonResults() {
+    var rows = liveModelData || [];
+    var csvContent = 'Model,RUL,Status,Recommendation\n';
+    rows.forEach(function(row) {
+        csvContent += '"' + (row.name || 'Model') + '",' + (row.rul !== null && row.rul !== undefined ? row.rul.toFixed(1) : 'N/A') + ',"' + (row.status || 'unknown') + '","' + (row.recommended ? 'Recommended' : '—') + '\n';
+    });
+    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = 'yaqza-comparison-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showToast('Comparison exported successfully', 'success');
+}
+
+function loadComparison() {
+    var eng = document.getElementById('eng-sel');
+    var engVal = eng ? eng.value : 'ENG001';
+    apiGet('/predict/' + engVal + '/compare').then(function(data) {
+        var rows = [];
+        var predictions = data.predictions || [];
+        predictions.forEach(function(item) {
+            rows.push({
+                name: item.model_name || item.model_key || 'Model',
+                rul: item.rul !== undefined ? item.rul : null,
+                status: item.status,
+                recommended: data.recommendation && data.recommendation.recommended_model === (item.model_name || item.model_key)
+            });
+        });
+        liveModelData = rows;
+        drawComparison();
+        populateTable();
+        var summary = document.getElementById('comparison-summary');
+        if (summary) {
+            var rec = data.recommendation || {};
+            summary.textContent = rec.recommended_model ? 'Recommended model: ' + rec.recommended_model + ' with predicted RUL ' + (rec.rul !== undefined ? rec.rul.toFixed(1) : 'n/a') + ' cycles.' : 'Comparison results are ready.';
+        }
+    }).catch(function(err) {
+        liveModelData = [];
+        drawComparison();
+        populateTable();
+        var summary = document.getElementById('comparison-summary');
+        if (summary) summary.textContent = 'Comparison unavailable: ' + err.message;
+        console.warn('Comparison load failed:', err.message);
+    });
 }
 
 // ─── Auto-refresh Simulation ────────────────────────────
@@ -1000,32 +1260,55 @@ function startAutoRefresh() {
     if (autoRefreshInterval) clearInterval(autoRefreshInterval);
     autoRefreshInterval = setInterval(function() {
         if (!isAutoRefreshing) return;
-        var lastIdx = ruls.length - 1;
-        var variation = (Math.random() - 0.5) * 3;
-        var newRUL = Math.max(0, Math.round(ruls[lastIdx] + variation));
-        ruls[lastIdx] = newRUL;
+        // REAL API CALL - fetch fresh prediction
+        var eng = document.getElementById('eng-sel');
+        var engVal = eng ? eng.value : 'ENG001';
+        var modelName = getSelectedModel();
 
-        if (rulChart) {
-            var paneStatus = document.getElementById('pane-status');
-            if (paneStatus && paneStatus.classList.contains('active')) {
-                rulChart.data.datasets[0].data = ruls;
-                rulChart.update('none');
+        fetchWithTimeout(API_BASE + '/predict/' + engVal + '/model/' + modelName, {}, 10000)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            // Update the last RUL value with real data
+            var newRUL = Math.round(data.rul);
+            if (ruls.length > 0) {
+                ruls[ruls.length - 1] = newRUL;
             }
-        }
-        if (histChart) {
-            var paneHist = document.getElementById('pane-history');
-            if (paneHist && paneHist.classList.contains('active')) {
-                histChart.data.datasets[0].data = ruls;
-                histChart.update('none');
+            lastPredictionData = data;
+
+            // Update charts silently
+            if (rulChart) {
+                var paneStatus = document.getElementById('pane-status');
+                if (paneStatus && paneStatus.classList.contains('active')) {
+                    rulChart.data.datasets[0].data = ruls;
+                    rulChart.update('none');
+                }
             }
-        }
-        var currentRUL = document.getElementById('m-rul');
-        if (currentRUL) {
-            var paneStatus = document.getElementById('pane-status');
-            if (paneStatus && paneStatus.classList.contains('active')) {
-                currentRUL.textContent = newRUL;
+            if (histChart) {
+                var paneHist = document.getElementById('pane-history');
+                if (paneHist && paneHist.classList.contains('active')) {
+                    histChart.data.datasets[0].data = ruls;
+                    histChart.update('none');
+                }
             }
-        }
+            // Update metrics silently (no animation)
+            var mRul = document.getElementById('m-rul');
+            if (mRul) mRul.textContent = newRUL;
+            var mConf = document.getElementById('m-conf');
+            if (mConf) mConf.textContent = Math.round(data.confidence);
+            var mHealth = document.getElementById('m-health');
+            if (mHealth) mHealth.textContent = Math.round(data.health_score);
+            var mStatus = document.getElementById('m-status');
+            if (mStatus) mStatus.textContent = data.status;
+
+            // Update gauges
+            animGauge('gr-rul', 'gn-rul', newRUL, 600);
+            animGauge('gr-conf', 'gn-conf', Math.round(data.confidence), 600);
+            animGauge('gr-health', 'gn-health', Math.round(data.health_score), 600);
+            animGauge('gr-risk', 'gn-risk', Math.round(100 - data.health_score), 600);
+        })
+        .catch(function(err) {
+            console.warn('Auto-refresh failed:', err.message);
+        });
     }, 5000);
 }
 
@@ -1034,9 +1317,170 @@ function toggleAutoRefresh() {
     showToast(isAutoRefreshing ? 'Auto-refresh enabled' : 'Auto-refresh paused', 'info');
 }
 
-// ─── Initial Load (Real API) ─────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// DUAL MODE INITIALIZATION (Streamlit OR Standalone)
+// ═════════════════════════════════════════════════════════════════════════════
+
+function initializeDashboard() {
+    // Check if data was injected by Streamlit
+    var injected = window.YAQZA_INITIAL_DATA || null;
+
+    if (injected) {
+        console.log('🚀 Streamlit mode detected - using injected data');
+
+        // Set engine and model from injected data
+        if (injected.engine) {
+            var engSel = document.getElementById('eng-sel');
+            if (engSel) engSel.value = injected.engine;
+        }
+        if (injected.model) {
+            var modelSel = document.getElementById('model-sel');
+            if (modelSel) modelSel.value = injected.model;
+        }
+
+        // Render injected prediction data
+        if (injected.prediction) {
+            renderPrediction(injected.prediction);
+        }
+
+        // Render injected history
+        if (injected.history && injected.history.length > 0) {
+            lastHistoryData = injected.history;
+            labels = injected.history.map(function(d) { return 'C' + d.cycle; });
+            ruls = injected.history.map(function(d) { return Math.round(d.rul); });
+            if (rulChart) { rulChart.data.labels = labels; rulChart.data.datasets[0].data = ruls; rulChart.update(); }
+            if (histChart) { histChart.data.labels = labels; histChart.data.datasets[0].data = ruls; histChart.update(); }
+        }
+
+        // Render injected comparison
+        if (injected.comparison) {
+            lastComparisonData = injected.comparison;
+            renderComparison(injected.comparison);
+        }
+
+        // Render injected recommendation
+        if (injected.recommendation) {
+            renderRecommendation(injected.recommendation);
+        }
+
+        // In Streamlit mode, we DON'T auto-refresh (Streamlit handles that)
+        // But we DO load available models
+        loadAvailableModels();
+
+    } else {
+        console.log('🌐 Standalone mode - making API calls');
+        // Standalone mode: make real API calls
+        loadAvailableModels();
+        runPrediction();
+        loadRecommendation();
+        loadComparison();
+    }
+}
+
+// Helper: render prediction data to UI
+function renderPrediction(data) {
+    lastPredictionData = data;
+
+    var p = {
+        rul: Math.round(data.rul || 0),
+        conf: Math.round(data.confidence || 0),
+        health: Math.round(data.health_score || 0),
+        risk: Math.round(100 - (data.health_score || 0)),
+        mode: data.failure_mode || 'unknown',
+        status: data.status || 'NORMAL',
+        warn: data.status !== 'NORMAL'
+    };
+
+    var mRul = document.getElementById('m-rul');
+    var mConf = document.getElementById('m-conf');
+    var mHealth = document.getElementById('m-health');
+    var mStatus = document.getElementById('m-status');
+    var mMode = document.getElementById('m-mode');
+
+    if (mRul) mRul.textContent = p.rul;
+    if (mConf) mConf.textContent = p.conf;
+    if (mHealth) mHealth.textContent = p.health;
+    if (mStatus) mStatus.textContent = p.status;
+    if (mMode) mMode.textContent = 'Failure mode: ' + p.mode;
+
+    animGauge('gr-rul', 'gn-rul', p.rul, 800);
+    animGauge('gr-conf', 'gn-conf', p.conf, 800);
+    animGauge('gr-health', 'gn-health', p.health, 800);
+    animGauge('gr-risk', 'gn-risk', p.risk, 800);
+
+    var bs = document.getElementById('b-status');
+    var br = document.getElementById('b-rul');
+    var mc = document.getElementById('mc-status');
+    var glow = document.getElementById('mc-glow');
+
+    if (p.warn) {
+        if (mc) {
+            mc.style.background = 'linear-gradient(135deg,rgba(255,69,96,.08),rgba(255,69,96,.02))';
+            mc.style.borderColor = 'rgba(255,69,96,.25)';
+        }
+        if (mStatus) mStatus.style.color = 'var(--red)';
+        if (glow) glow.style.background = 'var(--red)';
+        if (bs) { bs.className = 'mc-badge badge-red'; bs.textContent = '⚠ Warning'; }
+        if (br) { br.className = 'mc-badge badge-red'; br.textContent = '⚠ Below threshold'; }
+    } else {
+        if (mc) { mc.style.background = ''; mc.style.borderColor = ''; }
+        if (mStatus) mStatus.style.color = 'var(--amber)';
+        if (glow) glow.style.background = 'var(--amber)';
+        if (bs) { bs.className = 'mc-badge badge-green'; bs.textContent = '✓ Operational'; }
+        if (br) { br.className = 'mc-badge badge-cyan'; bs.textContent = '✓ Safe Zone'; }
+    }
+}
+
+// Helper: render comparison data
+function renderComparison(data) {
+    if (!data || !data.predictions) return;
+
+    var rows = [];
+    data.predictions.forEach(function(item) {
+        rows.push({
+            name: item.model_name || item.model_key || 'Model',
+            rul: item.rul !== undefined ? item.rul : null,
+            status: item.status,
+            recommended: data.recommendation && data.recommendation.recommended_model === (item.model_name || item.model_key)
+        });
+    });
+
+    liveModelData = rows;
+    drawComparison();
+    populateTable();
+
+    var summary = document.getElementById('comparison-summary');
+    if (summary) {
+        var rec = data.recommendation || {};
+        summary.textContent = rec.recommended_model ? 
+            'Recommended model: ' + rec.recommended_model + ' with predicted RUL ' + (rec.rul !== undefined ? rec.rul.toFixed(1) : 'n/a') + ' cycles.' : 
+            'Comparison results are ready.';
+    }
+}
+
+// Helper: render recommendation
+function renderRecommendation(data) {
+    var container = document.getElementById('recommendation-content');
+    if (!container || !data) return;
+
+    var html = [];
+    html.push('<div class="hl-box"><strong>Recommended Model:</strong> ' + (data.recommended_model || 'N/A') + '<br><strong>Consensus RUL:</strong> ' + (data.consensus_rul || 'N/A') + ' cycles<br><strong>Risk Level:</strong> ' + (data.risk_level || 'N/A') + '<br><strong>Urgency:</strong> ' + (data.urgency || 'N/A') + '</div>');
+    html.push('<div class="card" style="padding:14px;border-color:rgba(0,229,255,.2)"><div class="card-title" style="margin-bottom:8px">🧠 Recommendation</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + (data.recommendation || 'No recommendation returned yet.') + '</p></div>');
+
+    if (data.actions && data.actions.length) {
+        html.push('<div class="card" style="padding:14px;border-color:rgba(255,184,0,.2)"><div class="card-title" style="margin-bottom:8px">⚠️ Recommended Actions</div><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + data.actions.map(function(a){ return '<li>' + a + '</li>'; }).join('') + '</ul></div>');
+    }
+
+    if (data.model_insight) {
+        html.push('<div class="card" style="padding:14px;border-color:rgba(0,255,136,.2)"><div class="card-title" style="margin-bottom:8px">📈 Model Insight</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + data.model_insight + '</p></div>');
+    }
+
+    container.innerHTML = html.join('');
+}
+
+// ─── Initial Load ────────────────────────────────────────
 window.addEventListener('load', function() {
-    runPrediction();
+    initializeDashboard();
 });
 
 // ─── Keyboard Shortcuts ─────────────────────────────────
@@ -1045,8 +1489,8 @@ document.addEventListener('keydown', function(e) {
         e.preventDefault();
         runPrediction();
     }
-    if (e.key >= '1' && e.key <= '6' && !e.ctrlKey && !e.altKey) {
-        var tabs = ['status', 'ingest', 'history', 'pipeline', 'models', 'comparison'];
+    if (e.key >= '1' && e.key <= '7' && !e.ctrlKey && !e.altKey) {
+        var tabs = ['status', 'ingest', 'history', 'pipeline', 'models', 'comparison', 'recommendation'];
         var idx = parseInt(e.key) - 1;
         if (idx < tabs.length) {
             var tabBtn = document.querySelector('.tab-btn[data-tab="' + tabs[idx] + '"]');
@@ -1066,14 +1510,17 @@ document.addEventListener('keydown', function(e) {
 // ─── Initialization ─────────────────────────────────────
 setTimeout(function() {
     drawRUL();
-    animGauge('gr-rul', 'gn-rul', 87, 1200);
-    animGauge('gr-conf', 'gn-conf', 92, 1200);
-    animGauge('gr-health', 'gn-health', 81, 1200);
-    animGauge('gr-risk', 'gn-risk', 13, 1200);
-    animNum(document.getElementById('m-rul'), 0, 87, 1000);
-    animNum(document.getElementById('m-conf'), 0, 92, 1000);
-    animNum(document.getElementById('m-health'), 0, 81, 1000);
-    startAutoRefresh();
+    // Only animate if we don't have injected data
+    if (!window.YAQZA_INITIAL_DATA) {
+        animGauge('gr-rul', 'gn-rul', 87, 1200);
+        animGauge('gr-conf', 'gn-conf', 92, 1200);
+        animGauge('gr-health', 'gn-health', 81, 1200);
+        animGauge('gr-risk', 'gn-risk', 13, 1200);
+        animNum(document.getElementById('m-rul'), 0, 87, 1000);
+        animNum(document.getElementById('m-conf'), 0, 92, 1000);
+        animNum(document.getElementById('m-health'), 0, 81, 1000);
+        startAutoRefresh();
+    }
 }, 200);
 </script>
 </body>

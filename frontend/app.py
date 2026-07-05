@@ -1,168 +1,243 @@
 import streamlit as st
-import streamlit.components.v1 as components
-import os
-import pandas as pd
-from datetime import datetime
+import requests
+import json
+import time
+from pathlib import Path
 
-# ─── Page Config ─────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═════════════════════════════════════════════════════════════════════════════
+API_BASE = st.secrets.get("api_base", "http://127.0.0.1:8000") if hasattr(st, "secrets") else "http://127.0.0.1:8000"
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE SETUP
+# ═════════════════════════════════════════════════════════════════════════════
 st.set_page_config(
     page_title="Yaqza — Predictive Maintenance",
     page_icon="⚙️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# ─── Custom CSS ──────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# CUSTOM CSS - Hide Streamlit chrome
+# ═════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
-
-    .block-container { padding-top: 0.5rem; padding-bottom: 0rem; }
-    div[data-testid="stSidebarContent"] { background: #0d1422; border-right: 1px solid rgba(255,255,255,0.07); }
-
-    /* Hide default Streamlit elements */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-
-    /* Custom scrollbar */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+    [data-testid="stSidebar"] {display: none !important;}
+    [data-testid="collapsedControl"] {display: none !important;}
+    .block-container { padding: 0 !important; max-width: 100% !important; }
+    iframe { border: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Sidebar ─────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# API PROXY FUNCTIONS (Python side - no CORS issues!)
+# ═════════════════════════════════════════════════════════════════════════════
+@st.cache_data(ttl=10)
+def api_get(path, timeout=15):
+    """Make GET request to FastAPI backend"""
+    try:
+        response = requests.get(f"{API_BASE}{path}", timeout=timeout)
+        return response.json() if response.ok else {"error": response.text, "status": response.status_code}
+    except Exception as e:
+        return {"error": str(e)}
+
+def api_post(path, data, timeout=15):
+    """Make POST request to FastAPI backend"""
+    try:
+        response = requests.post(f"{API_BASE}{path}", json=data, timeout=timeout)
+        return response.json() if response.ok else {"error": response.text, "status": response.status_code}
+    except Exception as e:
+        return {"error": str(e)}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SESSION STATE
+# ═════════════════════════════════════════════════════════════════════════════
+if "engine" not in st.session_state:
+    st.session_state.engine = "ENG001"
+if "model" not in st.session_state:
+    st.session_state.model = "ridge"
+if "prediction" not in st.session_state:
+    st.session_state.prediction = None
+if "history" not in st.session_state:
+    st.session_state.history = []
+if "engines" not in st.session_state:
+    st.session_state.engines = ["ENG001", "ENG002", "ENG003"]
+if "comparison" not in st.session_state:
+    st.session_state.comparison = None
+if "recommendation" not in st.session_state:
+    st.session_state.recommendation = None
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SIDEBAR - Streamlit Native (replaces HTML sidebar)
+# ═════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.markdown("""
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
-        <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#00e5ff,#7c4dff);display:flex;align-items:center;justify-content:center;font-size:18px;box-shadow:0 0 18px rgba(0,229,255,.35);">⚙</div>
+        <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#00e5ff,#7c4dff);display:flex;align-items:center;justify-content:center;font-size:18px;color:white;">⚙</div>
         <div>
-            <div style="font-size:15px;font-weight:600;letter-spacing:0.3px;">Yaqza</div>
+            <div style="font-size:15px;font-weight:600;color:white;">Yaqza</div>
             <div style="font-size:11px;color:rgba(232,240,255,0.45);">Predictive Maintenance</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('<p style="font-size:10px;color:rgba(232,240,255,0.45);text-transform:uppercase;letter-spacing:1.2px;padding:8px 0 4px;">Quick Stats</p>', unsafe_allow_html=True)
+    # Fetch engines from API
+    engines_data = api_get("/engines")
+    if "engines" in engines_data and engines_data["engines"]:
+        st.session_state.engines = [e["engine_id"] for e in engines_data["engines"]]
 
-    # Quick stats from Python
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Engines", "3", help="Total monitored engines")
-    with col2:
-        st.metric("Predictions", "24", help="Predictions today")
+    st.markdown('<p style="font-size:10px;color:rgba(232,240,255,0.45);text-transform:uppercase;letter-spacing:1.2px;">Engine Selection</p>', unsafe_allow_html=True)
+
+    selected_engine = st.selectbox(
+        "Select Engine",
+        st.session_state.engines,
+        index=st.session_state.engines.index(st.session_state.engine) if st.session_state.engine in st.session_state.engines else 0,
+        label_visibility="collapsed"
+    )
+    st.session_state.engine = selected_engine
 
     st.markdown("---")
 
-    # Engine selector
-    engine = st.selectbox("🎯 Select Engine", ["ENG001", "ENG002", "ENG003"], index=0)
+    # Fetch models
+    models_data = api_get("/models")
+    available_models = []
+    if "models" in models_data:
+        available_models = [(m["key"].replace("_model", "").replace("_", "-"), m["name"]) 
+                          for m in models_data["models"] if m.get("available")]
+    if not available_models:
+        available_models = [("ridge", "Ridge Regression")]
+
+    model_display = st.selectbox(
+        "Select Model",
+        [m[1] for m in available_models],
+        index=0,
+        label_visibility="collapsed"
+    )
+    model_key = [m[0] for m in available_models if m[1] == model_display][0]
+    st.session_state.model = model_key
 
     st.markdown("---")
 
-    # Quick actions
-    st.markdown('<p style="font-size:10px;color:rgba(232,240,255,0.45);text-transform:uppercase;letter-spacing:1.2px;padding:8px 0 4px;">Quick Actions</p>', unsafe_allow_html=True)
+    # Quick Actions
+    st.markdown('<p style="font-size:10px;color:rgba(232,240,255,0.45);text-transform:uppercase;letter-spacing:1.2px;">Quick Actions</p>', unsafe_allow_html=True)
 
-    if st.button("🔄 Refresh Dashboard", use_container_width=True):
-        st.toast("Dashboard refreshed!")
+    if st.button("🔄 Refresh Data", use_container_width=True):
+        st.cache_data.clear()
         st.rerun()
 
-    if st.button("📊 Generate Report", use_container_width=True):
-        with st.spinner("Generating report..."):
-            import time
-            time.sleep(1.5)
-        st.success("Report generated!")
+    if st.button("📊 Run Prediction", use_container_width=True):
+        with st.spinner("Running prediction..."):
+            pred = api_get(f"/predict/{st.session_state.engine}/model/{st.session_state.model}")
+            st.session_state.prediction = pred
+            # Also fetch history
+            hist = api_get(f"/history/{st.session_state.engine}")
+            st.session_state.history = hist if isinstance(hist, list) else []
+        st.success("Prediction updated!")
+
+    if st.button("📐 Compare Models", use_container_width=True):
+        with st.spinner("Running comparison..."):
+            comp = api_get(f"/predict/{st.session_state.engine}/compare")
+            st.session_state.comparison = comp
+        st.success("Comparison done!")
+
+    if st.button("🛠️ Get Recommendation", use_container_width=True):
+        with st.spinner("Getting recommendation..."):
+            rec = api_get(f"/recommend/{st.session_state.engine}")
+            st.session_state.recommendation = rec
+        st.success("Recommendation ready!")
 
     st.markdown("---")
 
     # API Status
-    st.markdown("""
-    <div style="padding:10px 12px;border-radius:10px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.15);display:flex;align-items:center;gap:8px;font-size:12px;color:#00ff88;">
-        🟢 API Connected
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("---")
-    st.caption("v5.0 | Industrial IoT")
-
-# ─── Main Content ────────────────────────────────────────
-# Read and embed the HTML dashboard
-html_path = "yaqza_dashboard_v5.html"
-
-# Check if file exists in current directory, otherwise use a default path
-if os.path.exists(html_path):
-    with open(html_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-else:
-    # Try to find the file in the output directory
-    alt_path = "/mnt/agents/output/yaqza_dashboard_v5.html"
-    if os.path.exists(alt_path):
-        with open(alt_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-    else:
-        st.error("❌ Dashboard HTML file not found! Please make sure 'yaqza_dashboard_v5.html' is in the same directory.")
-        st.stop()
-
-# Embed the HTML dashboard with full height
-components.html(html_content, height=950, scrolling=True)
-
-# ─── Bottom Panel ────────────────────────────────────────
-st.markdown("---")
-
-# Create tabs for additional Streamlit-native features
-tab1, tab2, tab3 = st.tabs(["📈 Analytics", "⚙️ Settings", "📋 Logs"])
-
-with tab1:
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Avg RUL", "87 cycles", "+2%")
-    with col2:
-        st.metric("Model Accuracy", "92%", "+1.5%")
-    with col3:
-        st.metric("Uptime", "99.8%", "-0.1%")
-
-    # Simple line chart using Streamlit native
-    chart_data = pd.DataFrame({
-        'Cycle': ['C10', 'C15', 'C20', 'C25', 'C30', 'C35', 'C40', 'C45', 'C47'],
-        'RUL': [130, 122, 115, 108, 103, 98, 95, 90, 87],
-        'Threshold': [50, 50, 50, 50, 50, 50, 50, 50, 50]
-    })
-
-    st.line_chart(chart_data.set_index('Cycle'), use_container_width=True)
-
-with tab2:
-    st.subheader("Dashboard Settings")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        st.checkbox("Auto-refresh", value=True, help="Enable auto-refresh every 5 seconds")
-        st.checkbox("Show notifications", value=True, help="Show toast notifications")
-        st.checkbox("Dark mode", value=True, disabled=True, help="Dark mode is always on")
-    with col2:
-        st.slider("Refresh interval (seconds)", min_value=1, max_value=30, value=5)
-        st.selectbox("Default engine", ["ENG001", "ENG002", "ENG003"], index=0)
-        st.selectbox("Chart theme", ["Default", "Minimal", "Detailed"], index=0)
-
-    if st.button("💾 Save Settings", use_container_width=True):
-        st.success("Settings saved!")
-
-with tab3:
-    st.subheader("System Logs")
-
-    logs = [
-        {"time": "08:15:23", "level": "INFO", "message": "Dashboard loaded successfully"},
-        {"time": "08:14:45", "level": "SUCCESS", "message": "Prediction completed for ENG001 — RUL: 87 cycles"},
-        {"time": "08:12:10", "level": "WARNING", "message": "RUL approached warning zone for ENG003"},
-        {"time": "08:10:00", "level": "INFO", "message": "Sensor data ingested — 8 sensors recorded"},
-        {"time": "08:05:30", "level": "INFO", "message": "Model loaded — rul_model_v1.pkl"},
-    ]
-
-    for log in logs:
-        color = "green" if log["level"] == "SUCCESS" else "orange" if log["level"] == "WARNING" else "blue"
-        st.markdown(f"""
-        <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-            <span style="font-family:JetBrains Mono;font-size:11px;color:rgba(232,240,255,0.45);min-width:70px;">{log['time']}</span>
-            <span style="font-size:11px;font-weight:600;color:{color};min-width:60px;">{log['level']}</span>
-            <span style="font-size:12px;color:#e8f0ff;">{log['message']}</span>
+    health = api_get("/health", timeout=5)
+    if health.get("status") == "ok":
+        st.markdown("""
+        <div style="padding:10px 12px;border-radius:10px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.15);display:flex;align-items:center;gap:8px;font-size:12px;color:#00ff88;">
+            🟢 API Connected
         </div>
         """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="padding:10px 12px;border-radius:10px;background:rgba(255,69,96,.05);border:1px solid rgba(255,69,96,.15);display:flex;align-items:center;gap:8px;font-size:12px;color:#ff4560;">
+            🔴 API Disconnected
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.caption(f"🔗 {API_BASE}")
+
+# ═════════════════════════════════════════════════════════════════════════════
+# MAIN CONTENT AREA - HTML Dashboard (Pure Display, No API Calls)
+# ═════════════════════════════════════════════════════════════════════════════
+
+# Prepare data to inject into HTML
+prediction_json = json.dumps(st.session_state.prediction) if st.session_state.prediction else "null"
+history_json = json.dumps(st.session_state.history) if st.session_state.history else "[]"
+comparison_json = json.dumps(st.session_state.comparison) if st.session_state.comparison else "null"
+recommendation_json = json.dumps(st.session_state.recommendation) if st.session_state.recommendation else "null"
+engine_json = json.dumps(st.session_state.engine)
+model_json = json.dumps(st.session_state.model)
+
+# Read the HTML template
+base_dir = Path(__file__).resolve().parent
+html_path = base_dir / "yaqza_dashboard_v5_fixed.html"
+
+if not html_path.exists():
+    # Try alternative locations
+    alt_paths = [
+        base_dir.parent / "frontend" / "yaqza_dashboard_v5_fixed.html",
+        base_dir.parent / "yaqza_dashboard_v5_fixed.html",
+        base_dir / "yaqza_dashboard_v5.html",
+    ]
+    for p in alt_paths:
+        if p.exists():
+            html_path = p
+            break
+
+if html_path.exists():
+    with open(html_path, "r", encoding="utf-8") as f:
+        html_template = f.read()
+
+    # Inject data into HTML before rendering
+    # We add a script tag at the beginning that sets global variables
+    data_injection = f"""
+    <script>
+        // Injected by Streamlit - REAL DATA from API
+        window.YAQZA_INITIAL_DATA = {{
+            engine: {engine_json},
+            model: {model_json},
+            prediction: {prediction_json},
+            history: {history_json},
+            comparison: {comparison_json},
+            recommendation: {recommendation_json},
+            apiBase: "{API_BASE}",
+            isStreamlitEmbedded: true
+        }};
+    </script>
+    """
+
+    # Insert after <head> or before </head>
+    if "</head>" in html_template:
+        html_content = html_template.replace("</head>", data_injection + "
+</head>")
+    else:
+        html_content = data_injection + html_template
+
+    # Render HTML component
+    import streamlit.components.v1 as components
+    components.html(html_content, height=950, scrolling=True)
+
+else:
+    st.error("❌ Dashboard HTML file not found! Please ensure 'yaqza_dashboard_v5_fixed.html' exists.")
+    st.info(f"💡 Searched in: {base_dir}")
+
+    # Fallback: Show data in native Streamlit
+    st.subheader("📊 Current Status (Fallback View)")
+    if st.session_state.prediction:
+        st.json(st.session_state.prediction)
+    else:
+        st.info("No prediction data. Use the sidebar buttons to fetch data.")
