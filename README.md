@@ -1,8 +1,7 @@
 <div align="center">
 
-# ⚙️ Yaqza — Predictive Maintenance System
-
-**نظام صيانة تنبؤي ذكي للمحركات الصناعية مبني على NASA CMAPSS Dataset**
+# ⚙️ Yaqza — Predictive Maintenance System for Turbofan Engines
+A production-ready machine learning system for predicting Remaining Useful Life (RUL) of turbofan engines using the NASA CMAPSS dataset. Built with FastAPI, SQLAlchemy, and multiple ML models including ensemble trees, probabilistic boosting, and deep learning.
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green?logo=fastapi)](https://fastapi.tiangolo.com)
@@ -10,7 +9,7 @@
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-orange?logo=google)](https://ai.google.dev)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-[Demo](#-quick-start) · [API Docs](#-api-endpoints) · [Architecture](#-architecture) · [Team](#-team)
+
 
 </div>
 
