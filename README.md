@@ -363,5 +363,5 @@ pip install -r backend/requirements.txt
 
 
 <div align="center">
-Built with ❤️ by the Yaqza Team — DEBI Graduation Project 2026
+Built  by the Yaqza Team — DEPI Graduation Project 2026 Round 4
 </div>
