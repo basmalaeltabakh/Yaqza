@@ -189,6 +189,9 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
 .sidebar::-webkit-scrollbar{width:3px} .sidebar::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1)}
 </style>
 <base target="_blank">
+<base target="_blank">
+<base target="_blank">
+<base target="_blank">
 </head>
 <body>
 
@@ -202,7 +205,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); min-
       <div class="tb-sub">Industrial IoT Dashboard</div>
     </div>
   </div>
-  <div class="tb-right">
+    <div class="tb-right">
+    <select class="eng-select" id="lang-sel" onchange="onLanguageChange()" title="Select language">
+      <option value="en">🇬🇧 English</option>
+      <option value="ar">🇸🇦 العربية</option>
+    </select>
     <select class="eng-select" id="eng-sel" onchange="onEngineSelect()"><option>ENG001</option><option>ENG002</option><option>ENG003</option></select>
     <select class="eng-select" id="model-sel" onchange="onModelSelect()" title="Select prediction model">
       <option value="ridge">Ridge Regression</option>
@@ -460,6 +467,10 @@ var API_BASE = window.YAQZA_API_BASE || (window.location.hostname === 'localhost
     ? 'http://127.0.0.1:8000'
     : (window.YAQZA_API_BASE || 'http://127.0.0.1:8000');
 
+// Language state
+var currentLang = 'en';
+var lastRecommendationData = null;
+
 // Store last prediction data globally for exports
 var lastPredictionData = null;
 var lastHistoryData = [];
@@ -497,7 +508,11 @@ function loadAvailableModels() {
         if (!select) return;
         var current = select.value || 'ridge';
         select.innerHTML = '';
-        var availableModels = (data.models || []).filter(function(model) { return model.available; });
+        
+        var availableModels = (data.models || []).filter(function(model) { 
+            return model.available; 
+        });
+        
         if (!availableModels.length) {
             var fallback = document.createElement('option');
             fallback.value = 'ridge';
@@ -505,23 +520,37 @@ function loadAvailableModels() {
             select.appendChild(fallback);
             return;
         }
+        
         availableModels.forEach(function(model) {
             var option = document.createElement('option');
-            var value = model.key === 'ridge_model' ? 'ridge' : model.key === 'rf_model' ? 'rf' : model.key === 'xgb_model' ? 'xgboost' : model.key === 'ngb_model' ? 'ngboost' : model.key === 'cnn_lstm_model' ? 'cnn_lstm' : model.key.replace('_model', '');
+            var value = model.key === 'ridge_model' ? 'ridge' : 
+                       model.key === 'rf_model' ? 'rf' : 
+                       model.key === 'xgb_model' ? 'xgboost' : 
+                       model.key === 'ngb_model' ? 'ngboost' : 
+                       model.key === 'cnn_lstm_model' ? 'cnn_lstm' : 
+                       model.key.replace('_model', '');
             option.value = value;
             option.textContent = model.name;
             select.appendChild(option);
         });
-        if (Array.from(select.options).some(function(option) { return option.value === current; })) {
+        
+        var validOptions = Array.from(select.options).map(function(o) { return o.value; });
+        if (validOptions.indexOf(current) !== -1) {
             select.value = current;
         } else {
             select.value = select.options[0].value;
+        }
+        
+        if (window.YAQZA_INITIAL_DATA && window.YAQZA_INITIAL_DATA.model) {
+            var injected = window.YAQZA_INITIAL_DATA.model;
+            if (validOptions.indexOf(injected) !== -1) {
+                select.value = injected;
+            }
         }
     }).catch(function(err) {
         console.warn('Model list load failed:', err.message);
     });
 }
-
 // ─── Helper: forEach that works on NodeList in all browsers ─────────────────
 function forEachNode(nodeList, callback) {
     for (var i = 0; i < nodeList.length; i++) {
@@ -600,6 +629,53 @@ function onModelSelect() {
     runPrediction();
     loadComparison();
 }
+
+function onLanguageChange() {
+    var sel = document.getElementById('lang-sel');
+    currentLang = sel ? sel.value : 'en';
+    showToast(currentLang === 'ar' ? 'تم تغيير اللغة إلى العربية' : 'Language changed to English', 'info');
+
+    // Re-render recommendation if data exists
+    if (lastRecommendationData) {
+        renderRecommendation(lastRecommendationData);
+    }
+
+    // Update all static text elements that have bilingual content
+    updateStaticText();
+}
+
+// Update static text based on current language
+function updateStaticText() {
+    var isAr = currentLang === 'ar';
+
+    // Update sidebar labels
+    var sbLabels = document.querySelectorAll('.sb-label');
+    forEachNode(sbLabels, function(el) {
+        var text = el.textContent.trim();
+        if (text === 'Live Monitoring') el.textContent = isAr ? 'المراقبة المباشرة' : 'Live Monitoring';
+        else if (text === 'Model Evaluation') el.textContent = isAr ? 'تقييم النموذج' : 'Model Evaluation';
+        else if (text === 'Engines') el.textContent = isAr ? 'المحركات' : 'Engines';
+    });
+
+    // Update tab buttons
+    var tabBtns = document.querySelectorAll('.tab-btn');
+    var tabLabels = {
+        'status': { en: '📊 Current Status', ar: '📊 الحالة الحالية' },
+        'ingest': { en: '📥 Data Ingestion', ar: '📥 إدخال البيانات' },
+        'history': { en: '📈 History', ar: '📈 التاريخ' },
+        'pipeline': { en: '⚙️ Feature Pipeline', ar: '⚙️ خط المعالجة' },
+        'models': { en: '🧠 Architectures', ar: '🧠 البنى' },
+        'comparison': { en: '📐 Comparison', ar: '📐 المقارنة' },
+        'recommendation': { en: '🛠️ Recommendations', ar: '🛠️ التوصيات' }
+    };
+    forEachNode(tabBtns, function(btn) {
+        var tab = btn.getAttribute('data-tab');
+        if (tabLabels[tab]) {
+            btn.textContent = tabLabels[tab][isAr ? 'ar' : 'en'];
+        }
+    });
+}
+
 
 function switchTab(name, btn) {
     var btns = document.querySelectorAll('.tab-btn');
@@ -819,28 +895,21 @@ function loadRecommendation() {
         container.innerHTML = '<div class="spinner show" style="margin-bottom:0"><div class="spin"></div> Loading maintenance recommendation...</div>';
     }
 
-    Promise.all([
-        apiGet('/recommend/' + engVal),
-        apiGet('/analyze/' + engVal)
-    ]).then(function(results) {
-        var rec = results[0] || {};
-        var analysis = results[1] || {};
-        if (!container) return;
-
-        var html = [];
-        html.push('<div class="hl-box"><strong>Recommended Model:</strong> ' + (rec.recommended_model || 'N/A') + '<br><strong>Consensus RUL:</strong> ' + (rec.consensus_rul || analysis.consensus_rul || 'N/A') + ' cycles<br><strong>Risk Level:</strong> ' + (rec.risk_level || 'N/A') + '<br><strong>Urgency:</strong> ' + (rec.urgency || 'N/A') + '</div>');
-        html.push('<div class="card" style="padding:14px;border-color:rgba(0,229,255,.2)"><div class="card-title" style="margin-bottom:8px">🧠 Recommendation</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + (rec.recommendation || 'No recommendation returned yet.') + '</p></div>');
-        html.push('<div class="card" style="padding:14px;border-color:rgba(255,184,0,.2)"><div class="card-title" style="margin-bottom:8px">⚠️ Recommended Actions</div><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + (rec.actions || []).map(function(a){ return '<li>' + a + '</li>'; }).join('') + '</ul></div>');
-        html.push('<div class="card" style="padding:14px;border-color:rgba(0,255,136,.2)"><div class="card-title" style="margin-bottom:8px">📈 Model Insight</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + (rec.model_insight || analysis.model_insight_en || 'No model insight available.') + '</p></div>');
-        if (analysis.critical_sensors && analysis.critical_sensors.length) {
-            var sensorList = analysis.critical_sensors.slice(0, 5).map(function(s){ return '<li><strong>' + s.sensor_name + '</strong> — ' + s.trend + ' (' + s.trend_rate + '/cycle)</li>'; }).join('');
-            html.push('<div class="card" style="padding:14px;border-color:rgba(255,69,96,.2)"><div class="card-title" style="margin-bottom:8px">🔎 Critical Sensors</div><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + sensorList + '</ul></div>');
-        }
-        container.innerHTML = html.join('');
+    // Try /recommend first (new full analysis), fallback to /analyze
+    apiGet('/recommend/' + engVal).then(function(rec) {
+        lastRecommendationData = rec;
+        renderRecommendation(rec);
         showToast('Recommendation refreshed for ' + engVal, 'success');
     }).catch(function(err) {
-        if (container) container.innerHTML = '<div class="hl-box" style="border-color:rgba(255,69,96,.25)"><strong>Recommendation unavailable:</strong> ' + err.message + '</div>';
-        showToast('Recommendation request failed: ' + err.message, 'warning');
+        // Fallback to /analyze if /recommend fails
+        apiGet('/analyze/' + engVal).then(function(analysis) {
+            lastRecommendationData = analysis;
+            renderRecommendation(analysis);
+            showToast('Analysis loaded for ' + engVal, 'success');
+        }).catch(function(err2) {
+            if (container) container.innerHTML = '<div class="hl-box" style="border-color:rgba(255,69,96,.25)"><strong>Recommendation unavailable:</strong> ' + err.message + '</div>';
+            showToast('Recommendation request failed: ' + err.message, 'warning');
+        });
     });
 }
 
@@ -1321,29 +1390,46 @@ function toggleAutoRefresh() {
 // DUAL MODE INITIALIZATION (Streamlit OR Standalone)
 // ═════════════════════════════════════════════════════════════════════════════
 
+
 function initializeDashboard() {
-    // Check if data was injected by Streamlit
     var injected = window.YAQZA_INITIAL_DATA || null;
 
     if (injected) {
         console.log('🚀 Streamlit mode detected - using injected data');
 
-        // Set engine and model from injected data
         if (injected.engine) {
             var engSel = document.getElementById('eng-sel');
             if (engSel) engSel.value = injected.engine;
         }
-        if (injected.model) {
-            var modelSel = document.getElementById('model-sel');
-            if (modelSel) modelSel.value = injected.model;
+        
+        if (injected.language) {
+            var langSel = document.getElementById('lang-sel');
+            if (langSel) {
+                langSel.value = injected.language;
+                currentLang = injected.language;
+            }
+            // Apply language immediately
+            updateStaticText();
         }
 
-        // Render injected prediction data
+        loadAvailableModels();
+        
+        if (injected.model) {
+            setTimeout(function() {
+                var modelSel = document.getElementById('model-sel');
+                if (modelSel) {
+                    var validOptions = Array.from(modelSel.options).map(function(o) { return o.value; });
+                    if (validOptions.indexOf(injected.model) !== -1) {
+                        modelSel.value = injected.model;
+                        console.log('✅ Injected model applied:', injected.model);
+                    }
+                }
+            }, 300);
+        }
+
         if (injected.prediction) {
             renderPrediction(injected.prediction);
         }
-
-        // Render injected history
         if (injected.history && injected.history.length > 0) {
             lastHistoryData = injected.history;
             labels = injected.history.map(function(d) { return 'C' + d.cycle; });
@@ -1351,32 +1437,30 @@ function initializeDashboard() {
             if (rulChart) { rulChart.data.labels = labels; rulChart.data.datasets[0].data = ruls; rulChart.update(); }
             if (histChart) { histChart.data.labels = labels; histChart.data.datasets[0].data = ruls; histChart.update(); }
         }
-
-        // Render injected comparison
         if (injected.comparison) {
             lastComparisonData = injected.comparison;
             renderComparison(injected.comparison);
         }
-
-        // Render injected recommendation
         if (injected.recommendation) {
+            lastRecommendationData = injected.recommendation;
             renderRecommendation(injected.recommendation);
         }
-
-        // In Streamlit mode, we DON'T auto-refresh (Streamlit handles that)
-        // But we DO load available models
-        loadAvailableModels();
+        if (injected.analysis) {
+            // If no recommendation but analysis exists, use analysis
+            if (!injected.recommendation) {
+                lastRecommendationData = injected.analysis;
+                renderRecommendation(injected.analysis);
+            }
+        }
 
     } else {
         console.log('🌐 Standalone mode - making API calls');
-        // Standalone mode: make real API calls
         loadAvailableModels();
         runPrediction();
         loadRecommendation();
         loadComparison();
     }
 }
-
 // Helper: render prediction data to UI
 function renderPrediction(data) {
     lastPredictionData = data;
@@ -1459,26 +1543,96 @@ function renderComparison(data) {
 }
 
 // Helper: render recommendation
+// Helper: render recommendation with FULL bilingual support
+// Handles BOTH /recommend fields (recommendation_en/ar) AND /analyze fields (report_en/ar)
 function renderRecommendation(data) {
+    lastRecommendationData = data;
     var container = document.getElementById('recommendation-content');
     if (!container || !data) return;
 
+    var isAr = currentLang === 'ar';
     var html = [];
-    html.push('<div class="hl-box"><strong>Recommended Model:</strong> ' + (data.recommended_model || 'N/A') + '<br><strong>Consensus RUL:</strong> ' + (data.consensus_rul || 'N/A') + ' cycles<br><strong>Risk Level:</strong> ' + (data.risk_level || 'N/A') + '<br><strong>Urgency:</strong> ' + (data.urgency || 'N/A') + '</div>');
-    html.push('<div class="card" style="padding:14px;border-color:rgba(0,229,255,.2)"><div class="card-title" style="margin-bottom:8px">🧠 Recommendation</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + (data.recommendation || 'No recommendation returned yet.') + '</p></div>');
 
-    if (data.actions && data.actions.length) {
-        html.push('<div class="card" style="padding:14px;border-color:rgba(255,184,0,.2)"><div class="card-title" style="margin-bottom:8px">⚠️ Recommended Actions</div><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + data.actions.map(function(a){ return '<li>' + a + '</li>'; }).join('') + '</ul></div>');
+    // ── Unified field resolution ─────────────────────────────
+    // /recommend returns: recommendation_en, recommendation_ar, actions_en, actions_ar
+    // /analyze returns: report_en, report_ar, actions_en, actions_ar
+    // We normalize both to the same fields
+
+    var recTextEn = data.recommendation_en || data.report_en || data.recommendation || '';
+    var recTextAr = data.recommendation_ar || data.report_ar || data.recommendation || '';
+    var actionsEn = data.actions_en || data.actions || [];
+    var actionsAr = data.actions_ar || data.actions || [];
+    var insightEn = data.model_insight_en || data.model_insight || '';
+    var insightAr = data.model_insight_ar || data.model_insight || '';
+    var criticalSensors = data.critical_sensors || [];
+
+    // ── Header info box ──────────────────────────────────────
+    var headerLabels = {
+        model: isAr ? 'النموذج الموصى به:' : 'Recommended Model:',
+        rul: isAr ? 'العمر الافتراضي المتفق عليه:' : 'Consensus RUL:',
+        risk: isAr ? 'مستوى الخطر:' : 'Risk Level:',
+        urgency: isAr ? 'الإلحاح:' : 'Urgency:',
+        cycles: isAr ? 'دورة' : 'cycles'
+    };
+
+    html.push('<div class="hl-box">' +
+        '<strong>' + headerLabels.model + '</strong> ' + (data.recommended_model || 'N/A') + '<br>' +
+        '<strong>' + headerLabels.rul + '</strong> ' + (data.consensus_rul !== undefined ? data.consensus_rul : 'N/A') + ' ' + headerLabels.cycles + '<br>' +
+        '<strong>' + headerLabels.risk + '</strong> ' + (data.risk_level || 'N/A') + '<br>' +
+        '<strong>' + headerLabels.urgency + '</strong> ' + (data.urgency || 'N/A') +
+        '</div>');
+
+    // ── Main recommendation ──────────────────────────────────
+    var recText = isAr ? (recTextAr || recTextEn || 'لا يوجد توصية متاحة.') : (recTextEn || recTextAr || 'No recommendation available.');
+    var recTitle = isAr ? '🧠 التوصية' : '🧠 Recommendation';
+    html.push('<div class="card" style="padding:14px;border-color:rgba(0,229,255,.2)">' +
+        '<div class="card-title" style="margin-bottom:8px">' + recTitle + '</div>' +
+        '<p style="font-size:13px;color:var(--text);line-height:1.7">' + recText + '</p>' +
+        '</div>');
+
+    // ── Recommended Actions ──────────────────────────────────
+    var actions = isAr ? (actionsAr.length ? actionsAr : actionsEn) : (actionsEn.length ? actionsEn : actionsAr);
+    if (actions && actions.length) {
+        var actionsTitle = isAr ? '⚠️ الإجراءات الموصى بها' : '⚠️ Recommended Actions';
+        html.push('<div class="card" style="padding:14px;border-color:rgba(255,184,0,.2)">' +
+            '<div class="card-title" style="margin-bottom:8px">' + actionsTitle + '</div>' +
+            '<ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' +
+            actions.map(function(a){ return '<li>' + a + '</li>'; }).join('') +
+            '</ul></div>');
     }
 
-    if (data.model_insight) {
-        html.push('<div class="card" style="padding:14px;border-color:rgba(0,255,136,.2)"><div class="card-title" style="margin-bottom:8px">📈 Model Insight</div><p style="font-size:13px;color:var(--text);line-height:1.7">' + data.model_insight + '</p></div>');
+    // ── Model Insight ────────────────────────────────────────
+    var insight = isAr ? (insightAr || insightEn) : (insightEn || insightAr);
+    if (insight) {
+        var insightTitle = isAr ? '📈 رؤية النموذج' : '📈 Model Insight';
+        html.push('<div class="card" style="padding:14px;border-color:rgba(0,255,136,.2)">' +
+            '<div class="card-title" style="margin-bottom:8px">' + insightTitle + '</div>' +
+            '<p style="font-size:13px;color:var(--text);line-height:1.7">' + insight + '</p>' +
+            '</div>');
+    }
+
+    // ── Critical Sensors ─────────────────────────────────────
+    if (criticalSensors && criticalSensors.length) {
+        var sensorTitle = isAr ? '🔎 الحساسات الحرجة' : '🔎 Critical Sensors';
+        var sensorList = criticalSensors.slice(0, 6).map(function(s){
+            var trendAr = s.trend === 'increasing' ? 'مرتفع ↑' : s.trend === 'decreasing' ? 'منخفض ↓' : 'مستقر';
+            var trendDisplay = isAr ? trendAr : s.trend;
+            return '<li><strong>' + s.sensor_name + '</strong> — ' + trendDisplay + ' (' + s.trend_rate + '/cycle)' + (s.anomaly ? ' <span style="color:var(--red)">⚠️ ANOMALY</span>' : '') + '</li>';
+        }).join('');
+        html.push('<div class="card" style="padding:14px;border-color:rgba(255,69,96,.2)">' +
+            '<div class="card-title" style="margin-bottom:8px">' + sensorTitle + '</div>' +
+            '<ul style="margin:8px 0 0 18px;font-size:13px;color:var(--text);line-height:1.8">' + sensorList + '</ul>' +
+            '</div>');
+    }
+
+    // ── Generated by ─────────────────────────────────────────
+    if (data.generated_by) {
+        var genLabel = isAr ? 'تم الإنشاء بواسطة:' : 'Generated by:';
+        html.push('<div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:right;">' + genLabel + ' ' + data.generated_by + '</div>');
     }
 
     container.innerHTML = html.join('');
-}
-
-// ─── Initial Load ────────────────────────────────────────
+}// ─── Initial Load ────────────────────────────────────────
 window.addEventListener('load', function() {
     initializeDashboard();
 });
@@ -1520,6 +1674,8 @@ setTimeout(function() {
         animNum(document.getElementById('m-conf'), 0, 92, 1000);
         animNum(document.getElementById('m-health'), 0, 81, 1000);
         startAutoRefresh();
+    } else {
+        // Standalone mode - lang-sel is visible and functional
     }
 }, 200);
 </script>

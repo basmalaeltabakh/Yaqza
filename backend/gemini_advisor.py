@@ -76,7 +76,7 @@ def _call_gemini(prompt: str) -> str:
 def _parse_json(raw: str) -> dict:
     text = raw.strip()
     if text.startswith("```"):
-        lines = text.split("\n")
+        lines = text.split("")
         text  = "\n".join(lines[1:-1]).strip()
     return json.loads(text)
 
@@ -263,6 +263,11 @@ Return ONLY a valid JSON object with NO markdown fences:
         parsed = _build_fallback(engine_id, consensus_rul, risk, urgency, best_model, trends)
         source = "fallback-rule-engine"
 
+    # Language-aware single fields for backward compatibility
+    report_text = parsed.get("report_en", "") or parsed.get("report_ar", "")
+    actions_list = parsed.get("actions_en", []) or parsed.get("actions_ar", [])
+    insight_text = parsed.get("model_insight_en", "") or parsed.get("model_insight_ar", "")
+
     return {
         "engine_id"             : engine_id.upper(),
         "analysis_timestamp"    : datetime.utcnow().isoformat(),
@@ -274,6 +279,9 @@ Return ONLY a valid JSON object with NO markdown fences:
         "critical_sensors"      : trends["critical"],
         "stable_sensors"        : trends["stable"],
         "total_sensors_analyzed": trends["total"],
+        "report"                : report_text,
+        "actions"               : actions_list,
+        "model_insight"         : insight_text,
         "report_en"             : parsed.get("report_en", ""),
         "report_ar"             : parsed.get("report_ar", ""),
         "actions_en"            : parsed.get("actions_en", []),
@@ -292,35 +300,45 @@ def _build_fallback(engine_id, consensus_rul, risk, urgency, best_model, trends)
     critical_names_en = [s["sensor_name"] for s in trends["critical"][:3]]
     critical_names_ar = critical_names_en
 
+    # Single fields default to English
+    report_en_text = (
+        f"Engine {engine_id} has been assessed with a consensus RUL of {consensus_rul} cycles, "
+        f"indicating a {risk} risk level. "
+        f"Sensor analysis reveals changes in {', '.join(critical_names_en) if critical_names_en else 'multiple systems'}. "
+        f"Immediate action classification: {urgency}. "
+        f"Recommend consulting {best_model} model predictions for maintenance scheduling."
+    )
+    report_ar_text = (
+        f"تم تقييم المحرك {engine_id} بعمر افتراضي متبقي قدره {consensus_rul} دورة، "
+        f"مما يشير إلى مستوى خطر {risk}. "
+        f"كشف تحليل الحساسات عن تغييرات في {', '.join(critical_names_ar) if critical_names_ar else 'أنظمة متعددة'}. "
+        f"تصنيف الإجراء الفوري: {urgency}. "
+        f"يوصى بمراجعة توقعات نموذج {best_model} لجدولة الصيانة."
+    )
+
+    actions_en = [
+        f"Inspect components related to {critical_names_en[0] if critical_names_en else 'core systems'}.",
+        f"Schedule maintenance within timeframe: {urgency.replace('_', ' ')}.",
+        "Document all sensor readings and log current engine state.",
+        "Consult senior maintenance engineer before next operation.",
+        "Re-run prediction after any maintenance action.",
+    ]
+    actions_ar = [
+        f"فحص المكونات المرتبطة بـ {critical_names_ar[0] if critical_names_ar else 'الأنظمة الأساسية'}.",
+        f"جدولة الصيانة خلال: {urgency.replace('_', ' ')}.",
+        "توثيق جميع قراءات الحساسات وتسجيل الحالة الحالية للمحرك.",
+        "استشارة المهندس الأول قبل أي تشغيل.",
+        "إعادة تشغيل التوقع بعد أي إجراء صيانة.",
+    ]
+
     return {
-        "report_en": (
-            f"Engine {engine_id} has been assessed with a consensus RUL of {consensus_rul} cycles, "
-            f"indicating a {risk} risk level. "
-            f"Sensor analysis reveals changes in {', '.join(critical_names_en) if critical_names_en else 'multiple systems'}. "
-            f"Immediate action classification: {urgency}. "
-            f"Recommend consulting {best_model} model predictions for maintenance scheduling."
-        ),
-        "report_ar": (
-            f"تم تقييم المحرك {engine_id} بعمر افتراضي متبقي قدره {consensus_rul} دورة، "
-            f"مما يشير إلى مستوى خطر {risk}. "
-            f"كشف تحليل الحساسات عن تغييرات في {', '.join(critical_names_ar) if critical_names_ar else 'أنظمة متعددة'}. "
-            f"تصنيف الإجراء الفوري: {urgency}. "
-            f"يوصى بمراجعة توقعات نموذج {best_model} لجدولة الصيانة."
-        ),
-        "actions_en": [
-            f"Inspect components related to {critical_names_en[0] if critical_names_en else 'core systems'}.",
-            f"Schedule maintenance within timeframe: {urgency.replace('_', ' ')}.",
-            "Document all sensor readings and log current engine state.",
-            "Consult senior maintenance engineer before next operation.",
-            "Re-run prediction after any maintenance action.",
-        ],
-        "actions_ar": [
-            f"فحص المكونات المرتبطة بـ {critical_names_ar[0] if critical_names_ar else 'الأنظمة الأساسية'}.",
-            f"جدولة الصيانة خلال: {urgency.replace('_', ' ')}.",
-            "توثيق جميع قراءات الحساسات وتسجيل الحالة الحالية للمحرك.",
-            "استشارة المهندس الأول قبل أي تشغيل.",
-            "إعادة تشغيل التوقع بعد أي إجراء صيانة.",
-        ],
+        "report": report_en_text,
+        "actions": actions_en,
+        "model_insight": f"Fallback analysis — {best_model} is the recommended reference model.",
+        "report_en": report_en_text,
+        "report_ar": report_ar_text,
+        "actions_en": actions_en,
+        "actions_ar": actions_ar,
         "model_insight_en": f"Fallback analysis — {best_model} is the recommended reference model.",
         "model_insight_ar": f"تحليل احتياطي — {best_model} هو النموذج المرجعي الموصى به.",
     }
@@ -328,7 +346,7 @@ def _build_fallback(engine_id, consensus_rul, risk, urgency, best_model, trends)
 
 # ── للتوافق مع الكود القديم ──────────────────────────
 def get_maintenance_recommendation(engine_id: str, comparison_result: dict) -> dict:
-    """Wrapper للتوافق مع الـ /recommend endpoint القديم."""
+    """Wrapper للتوافق مع الـ /recommend endpoint - BILINGUAL."""
     consensus_rul = float(comparison_result.get("consensus_rul", 0))
     rec_info      = comparison_result.get("recommendation", {})
     best_model    = rec_info.get("recommended_model", "N/A")
@@ -361,9 +379,12 @@ Return ONLY valid JSON (no markdown):
 {{
   "risk_level": "{risk}",
   "urgency": "{urgency}",
-  "recommendation": "2-3 sentences for the factory owner.",
-  "actions": ["Action 1", "Action 2", "Action 3", "Action 4"],
-  "model_insight": "One sentence about model reliability."
+  "recommendation_en": "2-3 sentences in English for the factory owner.",
+  "recommendation_ar": "2-3 sentences in Arabic for the factory owner.",
+  "actions_en": ["Action 1", "Action 2", "Action 3", "Action 4"],
+  "actions_ar": ["إجراء ١", "إجراء ٢", "إجراء ٣", "إجراء ٤"],
+  "model_insight_en": "One sentence about model reliability.",
+  "model_insight_ar": "جملة واحدة عن موثوقية النموذج."
 }}"""
 
     try:
@@ -378,17 +399,34 @@ Return ONLY valid JSON (no markdown):
             "recommendation": f"Engine {engine_id} requires {urgency.lower().replace('_',' ')} attention. Consensus RUL is {consensus_rul} cycles.",
             "actions":        ["Inspect critical components.", "Schedule maintenance.", "Document findings.", "Monitor sensors."],
             "model_insight":  f"{best_model} is the recommended reference model.",
+            "recommendation_en": f"Engine {engine_id} requires {urgency.lower().replace('_',' ')} attention. Consensus RUL is {consensus_rul} cycles.",
+            "recommendation_ar": f"المحرك {engine_id} يحتاج اهتمام {urgency.lower().replace('_',' ')}. العمر الافتراضي المتبقي: {consensus_rul} دورة.",
+            "actions_en":        ["Inspect critical components.", "Schedule maintenance.", "Document findings.", "Monitor sensors."],
+            "actions_ar":        ["فحص المكونات الحرجة.", "جدولة الصيانة.", "توثيق النتائج.", "مراقبة الحساسات."],
+            "model_insight_en":  f"{best_model} is the recommended reference model.",
+            "model_insight_ar":  f"{best_model} هو النموذج المرجعي الموصى به.",
         }
         source = "fallback-rule-engine"
 
+    # Language-aware single fields for backward compatibility
+    recommendation_text = parsed.get("recommendation_en", "") or parsed.get("recommendation_ar", "")
+    actions_list = parsed.get("actions_en", []) or parsed.get("actions_ar", [])
+    insight_text = parsed.get("model_insight_en", "") or parsed.get("model_insight_ar", "")
+
     return {
-        "engine_id"        : engine_id.upper(),
-        "recommended_model": best_model,
-        "consensus_rul"    : consensus_rul,
-        "risk_level"       : parsed.get("risk_level", risk),
-        "urgency"          : parsed.get("urgency", urgency),
-        "recommendation"   : parsed.get("recommendation", ""),
-        "actions"          : parsed.get("actions", []),
-        "model_insight"    : parsed.get("model_insight", ""),
-        "generated_by"     : source,
-    }
+        "engine_id"         : engine_id.upper(),
+        "recommended_model" : best_model,
+        "consensus_rul"     : consensus_rul,
+        "risk_level"        : parsed.get("risk_level", risk),
+        "urgency"           : parsed.get("urgency", urgency),
+        "recommendation"    : recommendation_text,
+        "actions"           : actions_list,
+        "model_insight"     : insight_text,
+        "recommendation_en" : parsed.get("recommendation_en", ""),
+        "recommendation_ar" : parsed.get("recommendation_ar", ""),
+        "actions_en"        : parsed.get("actions_en", []),
+        "actions_ar"        : parsed.get("actions_ar", []),
+        "model_insight_en"  : parsed.get("model_insight_en", ""),
+        "model_insight_ar"  : parsed.get("model_insight_ar", ""),
+        "generated_by"      : source,
+        }

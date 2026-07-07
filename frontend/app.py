@@ -7,7 +7,10 @@ from pathlib import Path
 # ═════════════════════════════════════════════════════════════════════════════
 # CONFIGURATION
 # ═════════════════════════════════════════════════════════════════════════════
-API_BASE = st.secrets.get("api_base", "http://127.0.0.1:8000") if hasattr(st, "secrets") else "http://127.0.0.1:8000"
+try:
+    API_BASE = st.secrets.get("api_base", "http://127.0.0.1:8000")
+except Exception:
+    API_BASE = "http://127.0.0.1:8000"
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PAGE SETUP
@@ -61,6 +64,8 @@ if "engine" not in st.session_state:
     st.session_state.engine = "ENG001"
 if "model" not in st.session_state:
     st.session_state.model = "ridge"
+if "language" not in st.session_state:
+    st.session_state.language = "en"  # 'en' or 'ar'
 if "prediction" not in st.session_state:
     st.session_state.prediction = None
 if "history" not in st.session_state:
@@ -103,23 +108,61 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Fetch models
+    # Fetch models from API - DYNAMIC MODEL SELECTION
     models_data = api_get("/models")
     available_models = []
     if "models" in models_data:
-        available_models = [(m["key"].replace("_model", "").replace("_", "-"), m["name"]) 
-                          for m in models_data["models"] if m.get("available")]
+        for m in models_data["models"]:
+            if m.get("available"):
+                # Map backend key to frontend key
+                key = m["key"]
+                if key == "ridge_model":
+                    frontend_key = "ridge"
+                elif key == "rf_model":
+                    frontend_key = "rf"
+                elif key == "xgb_model":
+                    frontend_key = "xgboost"
+                elif key == "ngb_model":
+                    frontend_key = "ngboost"
+                elif key == "cnn_lstm_model":
+                    frontend_key = "cnn_lstm"
+                else:
+                    frontend_key = key.replace("_model", "")
+                available_models.append((frontend_key, m["name"]))
+
     if not available_models:
         available_models = [("ridge", "Ridge Regression")]
+
+    # Find current model index
+    current_model_index = 0
+    for i, (key, name) in enumerate(available_models):
+        if key == st.session_state.model:
+            current_model_index = i
+            break
 
     model_display = st.selectbox(
         "Select Model",
         [m[1] for m in available_models],
-        index=0,
+        index=current_model_index,
         label_visibility="collapsed"
     )
     model_key = [m[0] for m in available_models if m[1] == model_display][0]
     st.session_state.model = model_key
+
+    st.markdown("---")
+
+    # Language Selector
+    st.markdown('<p style="font-size:10px;color:rgba(232,240,255,0.45);text-transform:uppercase;letter-spacing:1.2px;">Language / اللغة</p>', unsafe_allow_html=True)
+
+    lang_options = {"en": "🇬🇧 English", "ar": "🇸🇦 العربية"}
+    selected_lang = st.selectbox(
+        "Select Language",
+        list(lang_options.keys()),
+        format_func=lambda x: lang_options[x],
+        index=0 if st.session_state.language == "en" else 1,
+        label_visibility="collapsed"
+    )
+    st.session_state.language = selected_lang
 
     st.markdown("---")
 
@@ -181,16 +224,18 @@ comparison_json = json.dumps(st.session_state.comparison) if st.session_state.co
 recommendation_json = json.dumps(st.session_state.recommendation) if st.session_state.recommendation else "null"
 engine_json = json.dumps(st.session_state.engine)
 model_json = json.dumps(st.session_state.model)
+language_json = json.dumps(st.session_state.language)
 
 # Read the HTML template
 base_dir = Path(__file__).resolve().parent
-html_path = base_dir / "yaqza_dashboard_v5_fixed.html"
+html_path = base_dir / "yaqza_dashboard_v6_fixed.html"
 
 if not html_path.exists():
     # Try alternative locations
     alt_paths = [
-        base_dir.parent / "frontend" / "yaqza_dashboard_v5_fixed.html",
-        base_dir.parent / "yaqza_dashboard_v5_fixed.html",
+        base_dir.parent / "frontend" / "yaqza_dashboard_v6_fixed.html",
+        base_dir.parent / "yaqza_dashboard_v6_fixed.html",
+        base_dir / "yaqza_dashboard_v5_fixed.html",
         base_dir / "yaqza_dashboard_v5.html",
     ]
     for p in alt_paths:
@@ -203,13 +248,13 @@ if html_path.exists():
         html_template = f.read()
 
     # Inject data into HTML before rendering
-    # We add a script tag at the beginning that sets global variables
     data_injection = f"""
     <script>
         // Injected by Streamlit - REAL DATA from API
         window.YAQZA_INITIAL_DATA = {{
             engine: {engine_json},
             model: {model_json},
+            language: {language_json},
             prediction: {prediction_json},
             history: {history_json},
             comparison: {comparison_json},
@@ -222,8 +267,7 @@ if html_path.exists():
 
     # Insert after <head> or before </head>
     if "</head>" in html_template:
-        html_content = html_template.replace("</head>", data_injection + "
-</head>")
+        html_content = html_template.replace("</head>", data_injection + "</head>")
     else:
         html_content = data_injection + html_template
 
@@ -232,7 +276,7 @@ if html_path.exists():
     components.html(html_content, height=950, scrolling=True)
 
 else:
-    st.error("❌ Dashboard HTML file not found! Please ensure 'yaqza_dashboard_v5_fixed.html' exists.")
+    st.error("❌ Dashboard HTML file not found! Please ensure 'yaqza_dashboard_v6_fixed.html' exists.")
     st.info(f"💡 Searched in: {base_dir}")
 
     # Fallback: Show data in native Streamlit

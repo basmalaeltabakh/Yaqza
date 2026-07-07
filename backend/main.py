@@ -12,8 +12,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Lazy imports for heavy / conflict-prone packages ────────────────────────
-# TensorFlow: only loaded when CNN-LSTM is actually used (avoids protobuf
-# conflicts with google-ai-generativelanguage at import time).
 _tf = None
 
 def _get_tf():
@@ -78,14 +76,14 @@ from schemas import (
     SuccessResponse,
     HealthResponse,
     ModelComparisonResponse,
-    AvailableModelsResponse,
     AvailableModelInfo,
     EnginesListResponse,
     ModelsListResponse,
     PredictRequest,
     CompareRequest,
     EngineInfo,
-    MaintenanceRecommendation
+    MaintenanceRecommendation,
+    AnalysisResponse
 )
 
 init_db()
@@ -99,27 +97,23 @@ app = FastAPI(
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip()
 
 # ═════════════════════════════════════════════════════════════════════════════
-# CORS CONFIGURATION - Handles both standalone and Streamlit iframe modes
+# CORS CONFIGURATION
 # ═════════════════════════════════════════════════════════════════════════════
-# CRITICAL: Streamlit components run in sandboxed iframes with "null" origin
-# The "*" wildcard does NOT match "null" origin - must handle explicitly
-# Reference: https://discuss.streamlit.io/t/issues-calling-an-api-endpoint-from-react-custom-component/6870
-
 _default_origins = [
-    "http://localhost:8501",      # Streamlit default
+    "http://localhost:8501",
     "http://127.0.0.1:8501",
-    "http://localhost:3000",      # React dev server
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://localhost:8080",      # Other common ports
+    "http://localhost:8080",
     "http://127.0.0.1:8080",
-    "null",                       # Streamlit sandboxed iframe origin
+    "null",
 ]
 
 env_origins = os.getenv("ALLOWED_ORIGINS", "")
 if env_origins and env_origins != "*":
     allowed_origins = [o.strip() for o in env_origins.split(",") if o.strip()]
     if "null" not in allowed_origins:
-        allowed_origins.append("null")  # Always allow null for Streamlit
+        allowed_origins.append("null")
 else:
     allowed_origins = _default_origins
 
@@ -133,7 +127,6 @@ app.add_middleware(
     max_age=600,
 )
 
-# Additional CORS handler for preflight requests from null origin
 @app.middleware("http")
 async def add_cors_headers(request, call_next):
     response = await call_next(request)
@@ -201,7 +194,6 @@ def _save_prediction(db: Session, engine_id: str, response: PredictionResponse, 
 # LIST / DROPDOWN ENDPOINTS
 # ═════════════════════════════════════════════════════════════════════════════
 
-
 @app.get("/engines", response_model=EnginesListResponse)
 def list_engines(min_readings: int = 0, db: Session = Depends(get_db)):
     try:
@@ -259,7 +251,7 @@ def list_engines(min_readings: int = 0, db: Session = Depends(get_db)):
 def list_models(db: Session = Depends(get_db)):
     try:
         logger.info("Loading artifacts for /models")
-        artifacts = feat.get_cached_artifacts()  # ← استخدم الـ cache
+        artifacts = feat.get_cached_artifacts()
         available_keys = list(artifacts.keys())
         logger.info(f"Loaded artifacts: {available_keys}")
     except Exception as e:
@@ -290,8 +282,6 @@ def list_models(db: Session = Depends(get_db)):
         total_available=len([m for m in models if m.available]),
         total_expected=5
     )
-
-
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -405,7 +395,6 @@ def predict_with_model(engine_id: str, model_name: str, db: Session = Depends(ge
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"model failed: {str(e)}")
 
-    # احسبي الـ confidence هنا قبل ما تبني الـ response
     confidence = 75.0
     if model_name == "ngboost" and result.get("uncertainty"):
         confidence = round(max(50.0, 100.0 - result["uncertainty"]["std"] * 2), 1)
@@ -494,8 +483,8 @@ def compare_with_body(request: CompareRequest, db: Session = Depends(get_db)):
 @app.get("/recommend/{engine_id}", response_model=MaintenanceRecommendation)
 def get_recommendation(engine_id: str, db: Session = Depends(get_db)):
     """
-    بيعمل model comparison وبعدين بيبعت النتيجة لـ Gemini
-    ويرجع توصية maintenance مفصّلة
+    بيعمل model comparison + sensor trend analysis + Gemini bilingual report
+    ويرجع توصية maintenance مفصّلة مع critical sensors
     """
     count = crud.get_readings_count(db, engine_id)
     if count < MIN_READINGS:
@@ -544,10 +533,11 @@ def get_recommendation(engine_id: str, db: Session = Depends(get_db)):
         "recommendation": recommendation_info,
     }
 
-    # 3. ابعتي لـ Gemini
+    # 3. ابعتي لـ Gemini مع sensor trends (الجديد)
     try:
-        result = gemini_advisor.get_maintenance_recommendation(
+        result = gemini_advisor.get_full_engine_analysis(
             engine_id=engine_id.upper(),
+            readings=readings,
             comparison_result=comparison_for_gemini,
         )
     except ValueError as e:
@@ -556,7 +546,30 @@ def get_recommendation(engine_id: str, db: Session = Depends(get_db)):
         logger.exception(f"Gemini recommendation failed for {engine_id}")
         raise HTTPException(status_code=500, detail=f"Gemini failed: {str(e)}")
 
-    return MaintenanceRecommendation(**result)
+    # 4. Map analysis fields to recommendation schema for backward compatibility
+    # get_full_engine_analysis returns report_en/ar but MaintenanceRecommendation expects recommendation_en/ar
+    mapped_result = {
+        "engine_id": result["engine_id"],
+        "recommended_model": result["recommended_model"],
+        "consensus_rul": result["consensus_rul"],
+        "risk_level": result["risk_level"],
+        "urgency": result["urgency"],
+        # Map report -> recommendation for schema compatibility
+        "recommendation": result.get("report", result.get("recommendation", "")),
+        "recommendation_en": result.get("report_en", ""),
+        "recommendation_ar": result.get("report_ar", ""),
+        "actions": result.get("actions", []),
+        "actions_en": result.get("actions_en", []),
+        "actions_ar": result.get("actions_ar", []),
+        "model_insight": result.get("model_insight", ""),
+        "model_insight_en": result.get("model_insight_en", ""),
+        "model_insight_ar": result.get("model_insight_ar", ""),
+        "generated_by": result.get("generated_by", ""),
+        # Include critical sensors from analysis
+        "critical_sensors": result.get("critical_sensors", []),
+    }
+
+    return MaintenanceRecommendation(**mapped_result)
 
 
 @app.get("/predict/{engine_id}/compare", response_model=ModelComparisonResponse)
@@ -620,7 +633,6 @@ def compare_models(engine_id: str, db: Session = Depends(get_db)):
     )
 
 
-
 @app.get("/history/{engine_id}", response_model=list[PredictionHistoryItem])
 def get_history(engine_id: str, db: Session = Depends(get_db)):
     try:
@@ -640,8 +652,8 @@ def get_history(engine_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         logger.exception(f"Error in get_history for {engine_id}")
         raise HTTPException(status_code=500, detail=f"History error: {str(e)}")
-    
-    
+
+
 @app.get("/analyze/{engine_id}")
 def full_engine_analysis(engine_id: str, db: Session = Depends(get_db)):
     """
@@ -656,14 +668,12 @@ def full_engine_analysis(engine_id: str, db: Session = Depends(get_db)):
 
     readings = crud.get_last_n_readings(db, engine_id, n=N_READINGS)
 
-    # شغّلي الـ comparison
     try:
         comparison = feat.predict_all_models(readings)
     except Exception as e:
         logger.exception(f"Comparison failed for {engine_id}")
         raise HTTPException(status_code=500, detail=f"model comparison failed: {str(e)}")
 
-    # حوّلي النتيجة لـ format مناسب
     predictions_list = []
     for model_key, pred in comparison["predictions"].items():
         entry = {
@@ -694,7 +704,6 @@ def full_engine_analysis(engine_id: str, db: Session = Depends(get_db)):
         "recommendation": rec_info,
     }
 
-    # كلّمي Gemini مع الـ sensor analysis
     try:
         result = gemini_advisor.get_full_engine_analysis(
             engine_id=engine_id.upper(),
