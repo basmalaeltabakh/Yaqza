@@ -76,6 +76,8 @@ if "comparison" not in st.session_state:
     st.session_state.comparison = None
 if "recommendation" not in st.session_state:
     st.session_state.recommendation = None
+if "analysis" not in st.session_state:
+    st.session_state.analysis = None
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SIDEBAR - Streamlit Native (replaces HTML sidebar)
@@ -162,7 +164,10 @@ with st.sidebar:
         index=0 if st.session_state.language == "en" else 1,
         label_visibility="collapsed"
     )
-    st.session_state.language = selected_lang
+    if selected_lang != st.session_state.language:
+        st.session_state.language = selected_lang
+        st.cache_data.clear()
+        st.rerun()
 
     st.markdown("---")
 
@@ -192,6 +197,9 @@ with st.sidebar:
         with st.spinner("Getting recommendation..."):
             rec = api_get(f"/recommend/{st.session_state.engine}")
             st.session_state.recommendation = rec
+            # Also fetch full analysis for complete bilingual report
+            analysis = api_get(f"/analyze/{st.session_state.engine}")
+            st.session_state.analysis = analysis
         st.success("Recommendation ready!")
 
     st.markdown("---")
@@ -222,13 +230,14 @@ prediction_json = json.dumps(st.session_state.prediction) if st.session_state.pr
 history_json = json.dumps(st.session_state.history) if st.session_state.history else "[]"
 comparison_json = json.dumps(st.session_state.comparison) if st.session_state.comparison else "null"
 recommendation_json = json.dumps(st.session_state.recommendation) if st.session_state.recommendation else "null"
+analysis_json = json.dumps(st.session_state.analysis) if st.session_state.analysis else "null"
 engine_json = json.dumps(st.session_state.engine)
 model_json = json.dumps(st.session_state.model)
 language_json = json.dumps(st.session_state.language)
 
 # Read the HTML template
 base_dir = Path(__file__).resolve().parent
-html_path = base_dir / "yaqza_dashboard_v6_fixed.html"
+html_path = base_dir / "yaqza_dashboard_v7_fixed.html"
 
 if not html_path.exists():
     # Try alternative locations
@@ -259,6 +268,7 @@ if html_path.exists():
             history: {history_json},
             comparison: {comparison_json},
             recommendation: {recommendation_json},
+            analysis: {analysis_json},
             apiBase: "{API_BASE}",
             isStreamlitEmbedded: true
         }};
@@ -276,7 +286,7 @@ if html_path.exists():
     components.html(html_content, height=950, scrolling=True)
 
 else:
-    st.error("❌ Dashboard HTML file not found! Please ensure 'yaqza_dashboard_v6_fixed.html' exists.")
+    st.error("❌ Dashboard HTML file not found! Please ensure 'yaqza_dashboard_v7_fixed.html' exists.")
     st.info(f"💡 Searched in: {base_dir}")
 
     # Fallback: Show data in native Streamlit
